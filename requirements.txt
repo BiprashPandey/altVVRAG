@@ -1,0 +1,20 @@
+# Phase 1 (minimal to run skeleton + tests)
+pyyaml>=6
+python-dotenv>=1
+numpy>=1.26
+pytest>=8
+
+# Full pipeline (phases 2+; GPU/CPU extras)
+scipy>=1.12
+scikit-learn>=1.4
+pillow>=10
+pymupdf>=1.23
+pytesseract>=0.3
+qdrant-client>=1.9
+torch>=2.2
+transformers>=4.40
+colpali-engine>=0.3
+google-generativeai>=0.5
+groq>=0.9
+openai>=1.30
+sentence-transformers>=2.7

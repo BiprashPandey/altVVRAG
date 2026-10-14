@@ -1,0 +1,43 @@
+render:
+  dpi: 150
+retriever:
+  model_id: "vidore/colqwen2-v1.0"     # VERIFY on Hub at Phase 2 (Option A); fallback to a ColPali ckpt if unavailable
+  device: "cuda"
+  dtype: "bfloat16"
+  prefetch_k_multiplier: 4
+  top_k: 3
+  pooling: "row_col_mean"
+qdrant:
+  mode: "local"
+  path: "data/qdrant"
+  collection_full: "pages_full"
+  collection_pooled: "pages_pooled"
+reader:
+  provider: "gemini"
+  model: "CONFIGURE_ME"                 # pick a free multimodal model at Phase 5; never hardcode in code
+  n_samples: 3
+  temperature: 0.7
+  max_output_tokens: 512
+  max_claims: 5
+nli:
+  model_id: "cross-encoder/nli-deberta-v3-base"
+  device: "cpu"
+ground:
+  heat_threshold_rel: 0.5
+  min_box_area_frac: 0.002
+  max_boxes: 3
+  box_padding_px: 8
+gate:
+  mode: "conformal"
+  alpha: 0.10
+  delta: 0.10
+  fixed_tau: 0.5
+ratelimit:
+  requests_per_minute: 10
+  max_retries: 6
+eval:
+  dataset: "slidevqa"
+  n_debug: 45
+  seed: 42
+  calib_frac: 0.5
+cache_dir: "data/cache"

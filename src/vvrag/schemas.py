@@ -1,0 +1,255 @@
+"""All data contracts (Section 4). Pixel space = rendered page image, origin top-left."""
+from __future__ import annotations
+
+import json
+from dataclasses import asdict, dataclass, field
+
+
+@dataclass
+class PageMeta:
+    doc_id: str
+    page: int
+    width: int
+    height: int
+    dpi: int = 150
+    grid_h: int = 0
+    grid_w: int = 0
+    has_text_layer: bool = False
+    image_path: str = ""
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "PageMeta":
+        return cls(**d)
+
+
+@dataclass
+class WordBox:
+    doc_id: str
+    page: int
+    text: str
+    box: tuple[int, int, int, int]  # (x0, y0, x1, y1) pixels
+    block_id: int = 0
+    line_id: int = 0
+
+    def to_dict(self) -> dict:
+        d = asdict(self)
+        d["box"] = list(self.box)
+        return d
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "WordBox":
+        d = dict(d)
+        d["box"] = tuple(d["box"])
+        return cls(**d)
+
+
+@dataclass
+class RetrievalHit:
+    doc_id: str
+    page: int
+    score: float
+    stage1_score: float = 0.0
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "RetrievalHit":
+        return cls(**d)
+
+
+@dataclass
+class Heatmap:
+    doc_id: str
+    page: int
+    grid: list[list[float]]  # [grid_h][grid_w]
+    query_tokens: list[str] = field(default_factory=list)
+    per_token: list[list[list[float]]] | None = None  # [T][grid_h][grid_w]
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "Heatmap":
+        return cls(**d)
+
+
+@dataclass
+class Evidence:
+    doc_id: str
+    page: int
+    boxes: list[tuple[int, int, int, int]] = field(default_factory=list)
+    crop_path: str = ""
+    crop_text: str = ""
+    heat_concentration: float = 0.0
+
+    def to_dict(self) -> dict:
+        d = asdict(self)
+        d["boxes"] = [list(b) for b in self.boxes]
+        return d
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "Evidence":
+        d = dict(d)
+        d["boxes"] = [tuple(b) for b in d.get("boxes", [])]
+        return cls(**d)
+
+
+@dataclass
+class Claim:
+    text: str
+    answer_span: str | None = None
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "Claim":
+        return cls(**d)
+
+
+@dataclass
+class ReaderSample:
+    sample_id: int
+    answer: str
+    claims: list[Claim] = field(default_factory=list)
+    raw: str = ""
+
+    def to_dict(self) -> dict:
+        return {
+            "sample_id": self.sample_id,
+            "answer": self.answer,
+            "claims": [c.to_dict() for c in self.claims],
+            "raw": self.raw,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "ReaderSample":
+        return cls(
+            sample_id=d["sample_id"],
+            answer=d["answer"],
+            claims=[Claim.from_dict(c) for c in d.get("claims", [])],
+            raw=d.get("raw", ""),
+        )
+
+
+@dataclass
+class Features:
+    agreement: float = 0.0
+    entail_prob: float | None = None
+    retrieval_margin: float = 0.0
+    heat_concentration: float = 0.0
+    n_claims: int = 0
+    crop_has_text: bool = True
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "Features":
+        return cls(**d)
+
+
+@dataclass
+class Result:
+    question: str
+    answer: str
+    abstained: bool = False
+    score: float = 0.0
+    tau: float = 0.0
+    evidence: Evidence = field(default_factory=lambda: Evidence(doc_id="", page=0))
+    samples: list[ReaderSample] = field(default_factory=list)
+    features: Features = field(default_factory=Features)
+    timings: dict = field(default_factory=dict)
+    api_calls: int = 0
+
+    def to_dict(self) -> dict:
+        return {
+            "question": self.question,
+            "answer": self.answer,
+            "abstained": self.abstained,
+            "score": self.score,
+            "tau": self.tau,
+            "evidence": self.evidence.to_dict(),
+            "samples": [s.to_dict() for s in self.samples],
+            "features": self.features.to_dict(),
+            "timings": self.timings,
+            "api_calls": self.api_calls,
+        }
+
+    def to_json(self) -> str:
+        return json.dumps(self.to_dict())
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "Result":
+        return cls(
+            question=d["question"],
+            answer=d["answer"],
+            abstained=d.get("abstained", False),
+            score=d.get("score", 0.0),
+            tau=d.get("tau", 0.0),
+            evidence=Evidence.from_dict(d.get("evidence", {"doc_id": "", "page": 0})),
+            samples=[ReaderSample.from_dict(s) for s in d.get("samples", [])],
+            features=Features.from_dict(d.get("features", {})),
+            timings=d.get("timings", {}),
+            api_calls=d.get("api_calls", 0),
+        )
+
+
+# ---------------------------------------------------------------------------
+# Coordinate helpers (single source of truth for grid -> pixel conversion).
+# All boxes are in rendered page image pixels, origin top-left.
+# ---------------------------------------------------------------------------
+
+def grid_cell_range_to_pixel_box(
+    r0: int,
+    c0: int,
+    r1: int,
+    c1: int,
+    page_width: int,
+    page_height: int,
+    grid_h: int,
+    grid_w: int,
+    padding_px: int = 0,
+) -> tuple[int, int, int, int]:
+    """Convert inclusive-exclusive cell range [r0,r1)x[c0,c1) to pixel box.
+
+    Cell (r, c) covers x in [c*W/gw, (c+1)*W/gw), y in [r*H/gh, (r+1)*H/gh).
+    Result is clipped to the page and padded (then re-clipped).
+    """
+    if grid_h <= 0 or grid_w <= 0:
+        raise ValueError("grid_h and grid_w must be positive")
+    r0 = max(0, min(r0, grid_h))
+    r1 = max(0, min(r1, grid_h))
+    c0 = max(0, min(c0, grid_w))
+    c1 = max(0, min(c1, grid_w))
+    if r1 <= r0 or c1 <= c0:
+        raise ValueError(f"empty cell range r[{r0},{r1}) c[{c0},{c1})")
+    x0 = int(c0 * page_width / grid_w)
+    x1 = int(round(c1 * page_width / grid_w))
+    y0 = int(r0 * page_height / grid_h)
+    y1 = int(round(r1 * page_height / grid_h))
+    if padding_px:
+        x0 -= padding_px
+        y0 -= padding_px
+        x1 += padding_px
+        y1 += padding_px
+    return clip_box_to_page((x0, y0, x1, y1), page_width, page_height)
+
+
+def clip_box_to_page(
+    box: tuple[int, int, int, int], page_width: int, page_height: int
+) -> tuple[int, int, int, int]:
+    x0, y0, x1, y1 = box
+    x0 = max(0, min(int(x0), page_width))
+    y0 = max(0, min(int(y0), page_height))
+    x1 = max(0, min(int(x1), page_width))
+    y1 = max(0, min(int(y1), page_height))
+    if x1 < x0:
+        x0, x1 = x1, x0
+    if y1 < y0:
+        y0, y1 = y1, y0
+    return (x0, y0, x1, y1)
