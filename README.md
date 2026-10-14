@@ -31,7 +31,7 @@ calibration). Latest debug table is in `docs/decisions.md` (local-only).
 ## Free API keys (for live-reader runs)
 
 - **Gemini** (default reader): https://aistudio.google.com → API key → `GEMINI_API_KEY=...`
-  in `.env`. Then: `pip install google-generativeai`, run
+  in `.env`. Then: `pip install google-genai`, run
   `probe_gemini()` (`src/vvrag/reader/client.py`) to list current free models,
   set `reader.model` in `config.yaml` (never hardcode), and run
   `pytest tests/test_reader.py -k live` (expects ≥95% valid JSON).

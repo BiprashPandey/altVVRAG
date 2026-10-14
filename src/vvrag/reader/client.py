@@ -2,7 +2,7 @@
 
 One method: generate(images, prompt, temperature, n) -> list[str].
 - mock: deterministic canned output (tests / offline smoke).
-- gemini (default): official google-generativeai SDK. UNVERIFIED without a key —
+- gemini (default): official google-genai SDK (v2, verified by inspection).
   run `probe_gemini()` once a GEMINI_API_KEY exists and record the model list.
 - groq / openrouter: alternative vision-chat implementations of the same interface.
 
@@ -80,36 +80,39 @@ class SequenceMockReader(ReaderClient):
 
 
 class GeminiReader(ReaderClient):
-    """Gemini multimodal reader. Requires GEMINI_API_KEY + google-generativeai."""
+    """Gemini multimodal reader. Requires GEMINI_API_KEY + google-genai (new SDK).
+
+    Verified 2026-10-14 against google-genai 2.30.1 via signature inspection
+    (Client(api_key=...), models.generate_content(model, contents, config)).
+    """
 
     def __init__(self, model: str, api_key: str, max_output_tokens: int = 512) -> None:
         self.model = model
         self.api_key = api_key
         self.max_output_tokens = max_output_tokens
-        self._model = None
+        self._client = None
 
     def _ensure(self):
-        if self._model is not None:
-            return self._model
+        if self._client is not None:
+            return self._client
         try:
-            import google.generativeai as genai
+            from google import genai
         except ImportError as e:
-            raise RuntimeError("pip install google-generativeai for the gemini reader") from e
-        genai.configure(api_key=self.api_key)
-        # NOTE: verify against installed SDK + current model list (probe_gemini).
-        self._model = genai.GenerativeModel(self.model)
-        return self._model
+            raise RuntimeError("pip install google-genai for the gemini reader") from e
+        self._client = genai.Client(api_key=self.api_key)
+        return self._client
 
     def generate(self, images, prompt, temperature, n) -> list[str]:
         from PIL import Image
 
-        model = self._ensure()
+        client = self._ensure()
         pil_images = [Image.open(p) for p in images]
         outs: list[str] = []
         for _ in range(n):
-            resp = model.generate_content(
-                [*pil_images, prompt],
-                generation_config={
+            resp = client.models.generate_content(
+                model=self.model,
+                contents=[*pil_images, prompt],
+                config={
                     "temperature": temperature,
                     "max_output_tokens": self.max_output_tokens,
                     "response_mime_type": "application/json",
@@ -121,10 +124,10 @@ class GeminiReader(ReaderClient):
 
 def probe_gemini(api_key: str) -> list[str]:
     """List available Gemini models. Run once with a key; record output in decisions.md."""
-    import google.generativeai as genai
+    from google import genai
 
-    genai.configure(api_key=api_key)
-    return [m.name for m in genai.list_models()]
+    client = genai.Client(api_key=api_key)
+    return [m.name for m in client.models.list()]
 
 
 class GroqReader(ReaderClient):
