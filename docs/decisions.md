@@ -1,5 +1,12 @@
 # decisions.md — log every non-obvious decision + deviation (Section 0.5)
 
+## 2026-10-14 — Phase 5 (reader)
+- Normalization: lower, strip punct, drop articles, un-thousands numbers, collapse WS. answers_match = exact-norm OR token-F1 >= 0.8.
+- Sampling: sample 0 @ temp 0 (primary), rest @ reader.temperature; invalid JSON retried ONCE then marked failed (raw kept).
+- Providers: mock (tests) + gemini/groq/openrouter clients coded but UNVERIFIED — no SDKs installed here, no GEMINI_API_KEY. Gemini uses response_mime_type=application/json; Groq/OpenRouter use base64 image_url + json_object format.
+- Live 95%-JSON check exists as skipped test (needs GEMINI_API_KEY + GEMINI_READER_MODEL). To run: set key, `pytest tests/test_reader.py -k live`. Reader model still CONFIGURE_ME until free-list probe.
+- Dedup: pipeline.parse_claims now wraps claims.parse_reader_output.
+
 ## 2026-10-14 — Phase 4 (grounding, C1)
 - Aggregation default max, mean behind flag (ablation in Phase 9). No token-weighting yet (flag-ready).
 - Box ranking = SUMMED heat (spec: "top max_boxes by summed heat") — favors larger blobs; test pins both directions.

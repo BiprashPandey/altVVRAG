@@ -10,6 +10,7 @@ from vvrag.cache import DiskCache
 from vvrag.config import load_config
 from vvrag.logging_utils import get_logger
 from vvrag.ratelimit import RateLimiter
+from vvrag.reader.claims import parse_reader_output
 from vvrag.reader.client import create_reader
 from vvrag.schemas import Claim, Evidence, Features, ReaderSample, Result
 
@@ -17,21 +18,8 @@ log = get_logger(__name__)
 
 
 def parse_claims(raw: str, max_claims: int = 5) -> tuple[str, list[Claim]]:
-    """Parse strict-JSON reader output {answer, claims[]} robustly (strip fences)."""
-    text = raw.strip()
-    if text.startswith("```"):
-        lines = text.splitlines()
-        lines = [ln for ln in lines if not ln.strip().startswith("```")]
-        text = "\n".join(lines).strip()
-    try:
-        obj = json.loads(text)
-    except json.JSONDecodeError:
-        return "UNANSWERABLE", []
-    answer = str(obj.get("answer", "UNANSWERABLE"))
-    claims: list[Claim] = []
-    for c in obj.get("claims", [])[:max_claims]:
-        if isinstance(c, dict) and "text" in c:
-            claims.append(Claim(text=str(c["text"]), answer_span=c.get("answer_span")))
+    """Thin wrapper over claims.parse_reader_output (drops the ok flag)."""
+    answer, claims, _ = parse_reader_output(raw, max_claims)
     return answer, claims
 
 
