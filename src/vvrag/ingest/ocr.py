@@ -13,6 +13,31 @@ class OCRError(RuntimeError):
     pass
 
 
+def find_tesseract() -> str | None:
+    """Locate the tesseract binary: PATH, TESSERACT_CMD env, or common
+    Windows install locations (winget installs per-user)."""
+    import os
+    import shutil
+
+    if os.environ.get("TESSERACT_CMD"):
+        return os.environ["TESSERACT_CMD"]
+    which = shutil.which("tesseract")
+    if which:
+        return which
+    cands = [
+        os.path.expandvars("%LOCALAPPDATA%/Programs/Tesseract-OCR/tesseract.exe"),
+        "C:/Program Files/Tesseract-OCR/tesseract.exe",
+    ]
+    for c in cands:
+        if c and os.path.isfile(c):
+            return c
+    return None
+
+
+def tesseract_available() -> bool:
+    return find_tesseract() is not None
+
+
 def needs_ocr(n_words: int, min_words: int = 10) -> bool:
     return n_words < min_words
 
@@ -28,6 +53,10 @@ def ocr_page(
     try:
         import pytesseract
         from PIL import Image
+
+        exe = find_tesseract()
+        if exe:
+            pytesseract.pytesseract.tesseract_cmd = exe
     except ImportError as e:
         raise OCRError(f"pytesseract/Pillow not installed: {e}") from e
 

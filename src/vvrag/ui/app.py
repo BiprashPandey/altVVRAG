@@ -74,6 +74,10 @@ async function jget(u){const r=await fetch(u);return r.json()}
 async function jpost(u,b){const r=await fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});const t=await r.json();if(!r.ok)throw new Error(t.error||r.status);return t}
 async function refresh(){
  const s=await jget('/api/status');
+ if(!window._ocrInit && s.ocr_available){
+  document.getElementById('skip_ocr').checked=false; window._ocrInit=true;
+  document.getElementById('up_msg').textContent='Tesseract found — OCR enabled';
+ }
  document.getElementById('status').innerHTML=
   `<b>Index:</b> ${s.docs} docs / ${s.pages} pages &nbsp;|&nbsp; <b>SDKs:</b> gemini:${s.sdk.gemini} groq:${s.sdk.groq} openrouter:${s.sdk.openrouter}`+
   ` &nbsp;|&nbsp; <b>Keys set:</b> gemini:${s.keys.gemini} groq:${s.keys.groq} openrouter:${s.keys.openrouter}`+
@@ -222,7 +226,7 @@ def status() -> dict:
         pages = con.execute("SELECT COUNT(*) FROM pages").fetchone()[0]
     except Exception:
         pass
-    return {
+    out = {
         "docs": docs, "pages": pages,
         "sdk": {"gemini": sdk_present("google.genai"),
                 "groq": sdk_present("groq"), "openrouter": sdk_present("openai")},
@@ -231,6 +235,13 @@ def status() -> dict:
                  "openrouter": bool(os.environ.get("OPENROUTER_API_KEY"))},
         "reader": {"provider": cfg.reader.provider, "model": cfg.reader.model},
     }
+    try:
+        from vvrag.ingest.ocr import tesseract_available
+
+        out["ocr_available"] = tesseract_available()
+    except Exception:
+        out["ocr_available"] = False
+    return out
 
 
 def save_keys(b: dict) -> dict:
