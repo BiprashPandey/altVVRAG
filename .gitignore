@@ -4,6 +4,7 @@ data/*
 !data/raw_uploads/
 data/raw/*
 !data/raw/.gitkeep
+!data/raw/testimg.png
 data/raw_uploads/*
 !data/raw_uploads/.gitkeep
 results/runs/
