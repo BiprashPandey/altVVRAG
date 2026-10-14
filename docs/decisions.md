@@ -1,5 +1,14 @@
 # decisions.md — log every non-obvious decision + deviation (Section 0.5)
 
+## 2026-10-14 — Phase 2 (ingestion)
+- PyMuPDF 1.28.2 (`import pymupdf`; `fitz` alias deprecated). Words via `page.get_text("words")`, scale dpi/72. Text-layer threshold: >=10 words.
+- qdrant-client 1.19.1: multivector verified live (`VectorParams(multivector_config=MultiVectorConfig(MAX_SIM))`, upsert+query in :memory:). Full=1 point/page; pooled=1 point/pooled-vector with deterministic uuid5 ids (idempotent upsert).
+- Pooled count per page = grid_h + grid_w + 1 (global). Fake grid 8x6 -> 15.
+- Tesseract binary + pytesseract NOT on laptop; `ocr_page` raises clean OCRError. Colab notebook installs tesseract-ocr. OCR live test deferred to GPU box.
+- ColQwen2 path UNVERIFIED (no torch on laptop). `ColQwenEmbedder._deduce_page_vectors` tries batch grid metadata then raises GridMismatchError rather than guessing. GPU operator must run `probe_environment()` + dry-run download first (notebook cell 2).
+- requirements: added pymupdf/pillow/qdrant-client (installed). torch/transformers/colpali-engine stay GPU-only.
+- CPU acceptance: 3 PDFs x 2 pages with fake embedder -> 6 full + 90 pooled points, word boxes in SQLite, 2nd run skips all 6 (resumable).
+
 ## 2026-10-14 — Phase 1
 - Python 3.14.7 on dev laptop (guideline asks 3.11+; OK). Compat of torch/colpali-engine with 3.14 to be verified at Phase 2; Colab GPU will use its own Python.
 - Schemas use stdlib `dataclasses` (guideline allows pydantic or dataclasses). Chose dataclasses to keep Phase 1 dependency-free.
