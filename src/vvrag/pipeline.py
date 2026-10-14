@@ -71,7 +71,7 @@ def main() -> None:
     res = answer(args.question, offline_mock=args.offline_mock, config_path=args.config)
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(res.to_dict(), indent=2))
+    out.write_text(json.dumps(res.to_dict(), indent=2), encoding="utf-8")
     print(out)
 
 

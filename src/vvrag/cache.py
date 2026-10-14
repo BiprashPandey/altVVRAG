@@ -29,15 +29,15 @@ class DiskCache:
         p = self._path(hash_request(key_obj))
         if not p.exists():
             return None
-        return json.loads(p.read_text())
+        return json.loads(p.read_text(encoding="utf-8"))
 
     def set(self, key_obj: Any, value: Any) -> str:
         key = hash_request(key_obj)
         p = self._path(key)
         fd, tmp = tempfile.mkstemp(dir=str(self.cache_dir), suffix=".tmp")
         try:
-            with os.fdopen(fd, "w") as f:
-                json.dump(value, f)
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(value, f, ensure_ascii=False)
             os.replace(tmp, p)
         except BaseException:
             try:
@@ -51,7 +51,7 @@ class DiskCache:
         """Return (value, hit). Compute + store on miss."""
         p = self._path(hash_request(key_obj))
         if p.exists():
-            return json.loads(p.read_text()), True
+            return json.loads(p.read_text(encoding="utf-8")), True
         value = compute()
         self.set(key_obj, value)
         return value, False

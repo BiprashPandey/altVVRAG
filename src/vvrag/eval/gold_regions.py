@@ -47,4 +47,4 @@ def derive_gold_box(
 
 def _union(boxes: list[tuple]) -> tuple[int, int, int, int]:
     return (min(b[0] for b in boxes), min(b[1] for b in boxes),
-            max(b[2] for b in boxes), max(b[3] for b in boxes])
+            max(b[2] for b in boxes), max(b[3] for b in boxes))

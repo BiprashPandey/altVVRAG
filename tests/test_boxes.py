@@ -76,6 +76,14 @@ def test_crop_and_text_in_box(tmp_path):
     assert [w.text for w in inside] == ["Evidence", "answer", "words", "here"]
     text, has = extract_crop_text(words, [box])
     assert has and text == "Evidence answer words here"
+    # multi-line visual order across blocks
+    mixed = [WordBox("d", 0, "B2", (100, 60, 140, 80), 9, 9),
+             WordBox("d", 0, "A1", (10, 10, 50, 30), 0, 0),
+             WordBox("d", 0, "B1", (10, 60, 50, 80), 9, 9),
+             WordBox("d", 0, "A2", (60, 10, 100, 30), 0, 0)]
+    from vvrag.ground.text_in_box import join_words
+
+    assert join_words(mixed) == "A1 A2 B1 B2"
     crop_path = crop_union(img, [box], tmp_path / "crop.png")
     assert tmp_path.joinpath("crop.png").exists() and crop_path
     ov = overlay_heatmap(img, np.ones((4, 4), dtype=np.float32), [box],

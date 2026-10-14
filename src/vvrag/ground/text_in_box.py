@@ -26,8 +26,29 @@ def words_in_boxes(
     return out
 
 
+def group_lines(words: list[WordBox]) -> list[list[WordBox]]:
+    """Cluster words into visual lines by y-center (tolerance = half median height)."""
+    if not words:
+        return []
+    heights = sorted(w.box[3] - w.box[1] for w in words)
+    tol = max(2.0, float(heights[len(heights) // 2]) / 2)
+    by_y = sorted(words, key=lambda w: (w.box[1] + w.box[3]) / 2)
+    lines: list[list[WordBox]] = []
+    means: list[float] = []
+    for w in by_y:
+        yc = (w.box[1] + w.box[3]) / 2
+        if lines and abs(yc - means[-1]) <= tol:
+            lines[-1].append(w)
+            means[-1] = sum((x.box[1] + x.box[3]) / 2 for x in lines[-1]) / len(lines[-1])
+        else:
+            lines.append([w])
+            means.append(yc)
+    return [[w for w in sorted(line, key=lambda w: w.box[0])] for line in lines]
+
+
 def join_words(words: list[WordBox]) -> str:
-    return " ".join(w.text for w in words).strip()
+    """Join in visual reading order: lines by y, words by x."""
+    return " ".join(w.text for line in group_lines(words) for w in line).strip()
 
 
 def extract_crop_text(
@@ -36,10 +57,16 @@ def extract_crop_text(
     crop_image_path: str | Path | None = None,
     lang: str = "eng",
 ) -> tuple[str, bool]:
-    """Returns (crop_text, crop_has_text)."""
-    inside = words_in_boxes(words, boxes)
-    if inside:
-        return join_words(inside), True
+    """Returns (crop_text, crop_has_text).
+
+    Lines are expanded to full visual lines: any line with >=1 word center
+    inside the boxes contributes all its words (complete sentences for NLI).
+    """
+    inside_ids = {id(w) for w in words_in_boxes(words, boxes)}
+    if inside_ids:
+        kept = [w for line in group_lines(words)
+                for w in line if any(id(x) in inside_ids for x in line)]
+        return join_words(kept), True
     if crop_image_path is not None:
         try:
             from vvrag.ingest.ocr import ocr_page

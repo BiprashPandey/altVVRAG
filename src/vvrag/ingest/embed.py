@@ -85,14 +85,15 @@ def save_embedding(
                 "dtype": "float16",
             },
             indent=2,
-        )
+        ),
+        encoding="utf-8",
     )
     return npy, js
 
 
 def load_embedding(out_dir: str | Path, doc_id: str, page: int) -> PatchEmbeddings:
     npy, js = embedding_paths(out_dir, doc_id, page)
-    meta = json.loads(js.read_text())
+    meta = json.loads(js.read_text(encoding="utf-8"))
     vectors = np.load(npy).astype(np.float32)
     return PatchEmbeddings(
         vectors=vectors,

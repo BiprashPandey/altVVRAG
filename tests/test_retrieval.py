@@ -37,7 +37,10 @@ def _build_index(tmp_path):
 def _query_from_gold(out, doc_id, page, variant, n_tokens=4, noise=0.1):
     """Query tokens = perturbed copies of gold-page patches (guaranteed near)."""
     pe = load_embedding(out / "embeddings", doc_id, page)
-    rng = np.random.default_rng(hash(f"{doc_id}/{page}/{variant}") % 2**32)
+    import hashlib
+
+    seed = int(hashlib.sha256(f"{doc_id}/{page}/{variant}".encode()).hexdigest()[:8], 16)
+    rng = np.random.default_rng(seed)
     idx = rng.choice(pe.vectors.shape[0], size=n_tokens, replace=False)
     q = pe.vectors[idx] + noise * rng.standard_normal((n_tokens, pe.dim)).astype(np.float32)
     q /= np.linalg.norm(q, axis=1, keepdims=True) + 1e-9

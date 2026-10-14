@@ -1,5 +1,59 @@
 # decisions.md — log every non-obvious decision + deviation (Section 0.5)
 
+## 2026-10-14 — Phase 6 (verification, C2+C3)
+- NLI model downloaded + verified LIVE on CPU: cross-encoder/nli-deberta-v3-base,
+  label2id = {contradiction:0, entailment:1, neutral:2} read from model config
+  (never assumed). CrossEncoder.predict returns LOGITS; softmax applied in code.
+  Entailment 0.99+ on true pairs, ~0 on false; sentence-windowing finds buried facts.
+- Claim template lesson: hypotheses of form "X is reported in the document" score
+  NEUTRAL (meta-talk); bare-fact claims ("X.") entail at 0.996. SimulatedReader
+  uses bare facts (also matches the Phase 5 atomic-claim prompt better).
+- Crop text expanded to full visual lines (y-clustered) so NLI gets complete
+  sentences; join order is visual (lines by y, words by x), robust to multi-block PDFs.
+- VLM fallback implemented, OFF by default (flag only).
+- Missing entailment encoded as entail_prob=0.5 + crop_has_text=0 (spec 7.4).
+
+## 2026-10-14 — Phase 7 (gate, C4)
+- DEVIATION x3 from 8.2 (proven degenerate as written, see conformal.py docstring):
+  (a) coarse grid (0..1 step 0.05) instead of unique calib scores (strictest unique
+  candidate has n_acc~1 -> CP bound 1-delta > alpha always -> always abstain);
+  (b) skip grid points with n_acc < min_n (default 30; eval auto-scales to
+  max(5, n_calib//3)); (c) loosest-passing selection without early stopping
+  (UCB non-monotone; strict-end tiny-n failures blocked the whole walk).
+  grid=None recovers the literal spec form.
+- Empirical guarantee check PASSES (200 splits, violation ~= <= delta + 0.05).
+- Scorer: sklearn LogisticRegression + StandardScaler on FEATURE_ORDER columns;
+  hand baseline 0.4*agr + 0.4*ent + 0.2*heat (missing entail -> 0.5).
+
+## 2026-10-14 — Phase 8 (eval harness)
+- Synthetic debug set plants each fact sentence inside a KNOWN 2x2 patch-cell
+  block (pixel-mapped via grid_cell_range_to_pixel_box), storing flat patch idx
+  on the item; queries built from those patches. C1 grounding is thus genuinely
+  tested offline: center_in_box = 1.0. IoU~0.03 expected (1-line strip vs 2x2-cell
+  box) — strip-vs-block geometry, not a bug; real IoU needs SlideVQA.
+- SimulatedReader: seeded, acc=0.7, distractors = sibling facts from same doc
+  (plausible wrong values -> NLI must discriminate; page-true distractors
+  sometimes entail — realistic NLI noise, cf. spec 14 domain-shift note).
+- Determinism: Python hash() is salted per-process; all seeded RNG uses
+  stable_seed() (sha256). Same command -> same numbers.
+- Retrieval on synthetic: Hit@3 0.667 (mult 4) -> 0.75 (mult 8): pooled-prefetch
+  dilution is real and measurable (spec ablation 10.4#5). Rerank loses the rest
+  (noise-0.15 queries vs 32 random pages).
+- SlideVQA loader tries Hub mirrors, raises with instructions otherwise;
+  download_data.sh documents the same. Real-data runs pending GPU+key.
+
+## 2026-10-14 — Phase 9 (debug full runs, --all, 16 decks / 96 items)
+- train 24 / calib 48 / test 24 (by deck). Learned scorer on train(+calib),
+  tau on calib, reported on test with bootstrap CIs.
+- verified-conformal: cover 0.667, sel_acc 0.875, tau=0.65, realized err 0.125
+  (n=16 answered; tiny-test noise, alpha=0.1). verified-fixed: 0.542/0.846.
+  Baseline: 1.0/0.708. AURC ~0.08-0.10. Full table: results/runs (gitignored).
+- Ablations: heat-mean finite (0.625/0.933); k=5 (0.708/0.824); alpha=0.05 -> +inf
+  (uncertifiable on 48 calib — correct behavior, real finding); hand scorer
+  (0.417/1.0); prefetch8 Hit@3 0.75.
+- Small-calib lesson: 10-deck runs inf'd every conformal arm; 16 decks work.
+  Article runs need hundreds of calib questions for tight, finite gates.
+
 ## 2026-10-14 — Phase 5 (reader)
 - Normalization: lower, strip punct, drop articles, un-thousands numbers, collapse WS. answers_match = exact-norm OR token-F1 >= 0.8.
 - Sampling: sample 0 @ temp 0 (primary), rest @ reader.temperature; invalid JSON retried ONCE then marked failed (raw kept).

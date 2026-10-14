@@ -134,7 +134,7 @@ def run_ingest(
     if client is not None:
         manifest["qdrant_full"] = index_mod.count_points(client, collection_full)
         manifest["qdrant_pooled"] = index_mod.count_points(client, collection_pooled)
-    (out_dir / "manifest.json").write_text(json.dumps(manifest, indent=2))
+    (out_dir / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     log.info("ingest done: %s", json.dumps(manifest, indent=2))
     return manifest
 
