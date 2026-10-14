@@ -2,7 +2,7 @@
 
 A cheaper/faster variant of a three-stage verifiable document-QA system
 (**retrieve → ground → verify-or-abstain**) with a conformal abstention gate.
-Full spec: [`projectGuidelines.md`](projectGuidelines.md).
+Full spec: `projectGuidelines.md` (local-only, kept in your `docs/` folder).
 
 Research contributions (vs. the reference design):
 - **C1** — patch-similarity heatmap grounding from the retriever's own MaxSim scores
@@ -25,7 +25,7 @@ This builds a synthetic 16-deck debug set, ingests it (fake embeddings),
 runs 4 arms + 4 ablations (real retrieval/grounding/NLI/scorer/gate, simulated
 reader), and writes `results/runs/{stamp}/` with `predictions.jsonl`,
 `summary.json/.md`, `main_table.tex`, and `figures/` (risk-coverage, IoU,
-calibration). Latest debug table is in [`docs/decisions.md`](docs/decisions.md)
+calibration). Latest debug table is in `docs/decisions.md` (local-only).
 (Phase 9 entry).
 
 ## Free API keys (for live-reader runs)
@@ -68,13 +68,13 @@ reported numbers on test with bootstrap 95% CIs.
   ground/ reader/ verify/ gate/ eval/` (one module per guideline section)
 - `tests/` — pytest suite (unit + smoke, no keys/GPU except marked live tests)
 - `config.yaml` / `.env.example` — every model, threshold, and path (nothing hardcoded)
-- `docs/decisions.md` — decision/deviation log (required reading for repro)
+- `docs/` — local-only notes (gitignored): decisions/deviations log, run guide
 - `results/` (gitignored) — `runs/{stamp}/` tables+figures, `demo/` overlays
 
 ## Status / known limits (honest)
 
 - Debug runs use synthetic stand-ins (fake embeddings, planted queries,
-  simulated reader); see `docs/decisions.md` for exactly what is/isn't measured.
+  simulated reader); see `docs/decisions.md` (local-only) for exactly what is/isn't measured.
 - Small calib sets → conformal may return `tau=+inf` (correctly abstains);
   needs hundreds of calib questions for tight guarantees.
 - ColQwen weights, live Tesseract, SlideVQA download, live reader JSON-rate:
