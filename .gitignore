@@ -1,5 +1,11 @@
-# data / outputs (gitignored)
-data/
+# data / outputs (gitignored) — except the committed skeleton folders below
+data/*
+!data/raw/
+!data/raw_uploads/
+data/raw/*
+!data/raw/.gitkeep
+data/raw_uploads/*
+!data/raw_uploads/.gitkeep
 results/runs/
 results/demo/
 *.npy
