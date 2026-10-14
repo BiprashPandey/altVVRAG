@@ -89,14 +89,26 @@ async function saveKeys(){
 async function upload(){
  const fs=document.getElementById('files').files;
  if(!fs.length){document.getElementById('up_msg').textContent='pick files first';return}
- document.getElementById('up_msg').textContent='uploading + ingesting…';
- const arr=[];
- for(const f of fs){const b=await f.arrayBuffer();
-  arr.push({name:f.name,b64:btoa(String.fromCharCode(...new Uint8Array(b)))})}
- try{const m=await jpost('/api/upload',{files:arr,skip_ocr:document.getElementById('skip_ocr').checked});
+ const msg=document.getElementById('up_msg');
+ try{
+  const arr=[];
+  for(const f of fs){
+   msg.textContent=`reading ${f.name} (${Math.round(f.size/1024)} KB)…`;
+   const b=await f.arrayBuffer();
+   arr.push({name:f.name,b64:u8ToB64(new Uint8Array(b))});
+  }
+  msg.textContent='uploading…';
+  const m=await jpost('/api/upload',{files:arr,skip_ocr:document.getElementById('skip_ocr').checked});
+  msg.textContent='ingesting on server…';
   document.getElementById('manifest').textContent=JSON.stringify(m,null,1);
-  document.getElementById('up_msg').textContent='done';refresh()}
- catch(e){document.getElementById('up_msg').textContent='error: '+e.message}
+  msg.textContent='done';refresh();
+ }catch(e){msg.textContent='error: '+(e&&e.message?e.message:e)}
+}
+function u8ToB64(u8){
+ // chunked: spreading the whole array into apply() blows the arg limit (RangeError)
+ let s='';const CH=0x8000;
+ for(let i=0;i<u8.length;i+=CH){s+=String.fromCharCode.apply(null,u8.subarray(i,Math.min(i+CH,u8.length)))}
+ return btoa(s);
 }
 async function ask(){
  const q=document.getElementById('q').value.trim();

@@ -62,6 +62,7 @@ class ArmConfig:
     prefetch_mult: int = 4
     top_k: int = 3
     use_real_nli: bool = True
+    nli_device: str = "auto"
 
 
 @dataclass
@@ -159,7 +160,7 @@ class OfflineSystem:
             if self.cfg.use_real_nli:
                 from vvrag.verify.nli import NLIEntailer
 
-                self.nli = NLIEntailer()
+                self.nli = NLIEntailer(device=self.cfg.nli_device)
                 self.nli.load()
             else:
                 self.nli = FakeNLI()

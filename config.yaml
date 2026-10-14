@@ -21,7 +21,7 @@ reader:
   max_claims: 5
 nli:
   model_id: "cross-encoder/nli-deberta-v3-base"
-  device: "cpu"
+  device: "auto"   # auto = cuda when available, else cpu
 ground:
   heat_threshold_rel: 0.5
   min_box_area_frac: 0.002

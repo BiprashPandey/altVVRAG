@@ -55,20 +55,35 @@ def split_windows(premise: str, max_chars: int = 1500) -> list[str]:
 
 class NLIEntailer:
     def __init__(self, model_id: str = "cross-encoder/nli-deberta-v3-base",
-                 device: str = "cpu", max_length: int = 512) -> None:
+                 device: str = "auto", max_length: int = 512) -> None:
         self.model_id = model_id
         self.device = device
         self.max_length = max_length
         self._model = None
         self._entail_idx = None
 
+    @staticmethod
+    def resolve_device(want: str) -> str:
+        if want != "auto":
+            return want
+        try:
+            import torch
+
+            if torch.cuda.is_available():
+                return "cuda"
+        except ImportError:
+            pass
+        return "cpu"
+
     def load(self) -> None:
         from sentence_transformers import CrossEncoder
 
+        self.device = self.resolve_device(self.device)
         self._model = CrossEncoder(self.model_id, device=self.device,
                                    max_length=self.max_length)
         self._entail_idx = label_order(self._model)["entailment"]
-        log.info("NLI loaded: %s entail_idx=%d", self.model_id, self._entail_idx)
+        log.info("NLI loaded: %s on %s (entail_idx=%d)",
+                 self.model_id, self.device, self._entail_idx)
 
     def entail_probs(self, premise: str, hypotheses: list[str]) -> list[float]:
         """Max-over-windows entailment probability per hypothesis."""
