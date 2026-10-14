@@ -4,6 +4,9 @@ results/runs/
 results/demo/
 *.npy
 
+# local docs / notes (gitignored)
+docs/
+
 # secrets
 .env
 
