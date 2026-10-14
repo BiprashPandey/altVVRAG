@@ -1,5 +1,14 @@
 # decisions.md — log every non-obvious decision + deviation (Section 0.5)
 
+## 2026-10-14 — Phase 4 (grounding, C1)
+- Aggregation default max, mean behind flag (ablation in Phase 9). No token-weighting yet (flag-ready).
+- Box ranking = SUMMED heat (spec: "top max_boxes by summed heat") — favors larger blobs; test pins both directions.
+- Components: scipy 8-connectivity. heat_concentration = fraction of heat inside boxes.
+- Crop = UNION of boxes (spec allows union-or-each; union chosen so NLI gets full context).
+- Snap-to-lines implemented but OFF by default (ablation arm later).
+- Real-data overlay inspection (8/10 pages) deferred to SlideVQA (Phase 8); synthetic check: box (392,192,608,408) vs true (400,200,600,400) = exact + 8px padding. Overlays in results/demo/ (gitignored).
+- Token drop-list covers common specials; ColQwen query-processor specials TBD on GPU box.
+
 ## 2026-10-14 — Phase 3 (retrieval)
 - MaxSim = sum_t max_p dot, float32; brute-force test uses approx (float32 vs float64 accumulation).
 - Stage 1: per-token search over pooled points (limit = mult*top_k), page score = sum of token-best pooled dots; returns mult*top_k candidates. Stage 2: scroll full multivector by (doc_id, page) filter, local MaxSim rerank.
