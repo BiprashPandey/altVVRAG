@@ -1,5 +1,12 @@
 # decisions.md — log every non-obvious decision + deviation (Section 0.5)
 
+## 2026-10-14 — Phase 3 (retrieval)
+- MaxSim = sum_t max_p dot, float32; brute-force test uses approx (float32 vs float64 accumulation).
+- Stage 1: per-token search over pooled points (limit = mult*top_k), page score = sum of token-best pooled dots; returns mult*top_k candidates. Stage 2: scroll full multivector by (doc_id, page) filter, local MaxSim rerank.
+- Qdrant MAX_SIM ordering matches local maxsim_rank exactly (top-1 + top-3 order verified on 6-page fake index).
+- Real query embedder (ColQwen query processor) UNVERIFIED — same GPU caveat as Phase 2; FakeQueryEmbedder is text-seeded/deterministic for tests only.
+- Debug-set caveat: queries are perturbed gold-patch copies (guaranteed-near by construction), so Hit@3 ~= 1.0 here measures pipeline correctness, not model quality. Real Hit@3 comes in Phase 8 with SlideVQA.
+
 ## 2026-10-14 — Phase 2 (ingestion)
 - PyMuPDF 1.28.2 (`import pymupdf`; `fitz` alias deprecated). Words via `page.get_text("words")`, scale dpi/72. Text-layer threshold: >=10 words.
 - qdrant-client 1.19.1: multivector verified live (`VectorParams(multivector_config=MultiVectorConfig(MAX_SIM))`, upsert+query in :memory:). Full=1 point/page; pooled=1 point/pooled-vector with deterministic uuid5 ids (idempotent upsert).
