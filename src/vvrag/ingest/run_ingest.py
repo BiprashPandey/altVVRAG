@@ -55,9 +55,15 @@ def run_ingest(
 
     files = discover_inputs(input_dir, limit)
     log.info("found %d input files in %s", len(files), input_dir)
+    if not files:
+        raise SystemExit(
+            f"no PDFs/images found in {input_dir}. Upload files there first, then re-run."
+        )
 
     if embedder == "colqwen":
-        eq = embed_mod.ColQwenEmbedder(model_id=model_id or "vidore/colqwen2-v1.0")
+        model_id = model_id or "vidore/colqwen2-v1.0"
+        log.info("loading ColQwen embedder %s (multi-GB download on first run)", model_id)
+        eq = embed_mod.ColQwenEmbedder(model_id=model_id)
         eq.load()
     elif embedder == "fake":
         fake = embed_mod.FakePatchEmbedder()
