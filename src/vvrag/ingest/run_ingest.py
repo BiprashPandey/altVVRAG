@@ -44,6 +44,7 @@ def run_ingest(
     collection_pooled: str = "pages_pooled",
     qdrant_mode: str = "local",
     qdrant_path: str = "",
+    batch_size: int = 1,
 ) -> dict:
     from vvrag.schemas import PageMeta
 
@@ -63,7 +64,7 @@ def run_ingest(
     if embedder == "colqwen":
         model_id = model_id or "vidore/colqwen2-v1.0"
         log.info("loading ColQwen embedder %s (multi-GB download on first run)", model_id)
-        eq = embed_mod.ColQwenEmbedder(model_id=model_id)
+        eq = embed_mod.ColQwenEmbedder(model_id=model_id, batch_size=batch_size)
         eq.load()
     elif embedder == "fake":
         fake = embed_mod.FakePatchEmbedder()
@@ -156,6 +157,8 @@ def main() -> None:
     ap.add_argument("--model-id", default="")
     ap.add_argument("--skip-ocr", action="store_true")
     ap.add_argument("--limit", type=int, default=0)
+    ap.add_argument("--batch-size", type=int, default=1,
+                    help="GPU embed batch (auto-halved on CUDA OOM)")
     args = ap.parse_args()
 
     cfg = load_config(args.config)
@@ -171,6 +174,7 @@ def main() -> None:
         collection_pooled=cfg.qdrant.collection_pooled,
         qdrant_mode=cfg.qdrant.mode,
         qdrant_path=cfg.qdrant.path,
+        batch_size=args.batch_size,
     )
     print(json.dumps(manifest, indent=2))
 

@@ -161,12 +161,12 @@ class ColQwenEmbedder:
         model_id: str = "vidore/colqwen2-v1.0",
         device: str = "cuda",
         dtype: str = "bfloat16",
-        batch_size: int = 4,
+        batch_size: int = 1,
     ) -> None:
         self.model_id = model_id
         self.device = device
         self.dtype = dtype
-        self.batch_size = batch_size
+        self.batch_size = max(1, batch_size)
         self._model = None
         self._processor = None
 
@@ -185,7 +185,12 @@ class ColQwenEmbedder:
         self._model = ColQwen2.from_pretrained(self.model_id, torch_dtype=torch_dtype).to(
             self.device
         ).eval()
-        log.info("loaded %s on %s (%s)", self.model_id, self.device, self.dtype)
+        try:
+            vram = torch.cuda.memory_allocated(self.device) / 1e9
+            log.info("loaded %s on %s (%s), weights VRAM %.1f GB",
+                     self.model_id, self.device, self.dtype, vram)
+        except Exception:
+            log.info("loaded %s on %s (%s)", self.model_id, self.device, self.dtype)
 
     def embed_images(self, image_paths: list[str | Path]) -> list[PatchEmbeddings]:
         if self._model is None or self._processor is None:
@@ -195,21 +200,43 @@ class ColQwenEmbedder:
         from PIL import Image
 
         out: list[PatchEmbeddings] = []
-        for i in range(0, len(image_paths), self.batch_size):
-            batch_paths = [Path(p) for p in image_paths[i : i + self.batch_size]]
-            images = [Image.open(p).convert("RGB") for p in batch_paths]
-            with torch.no_grad():
-                batch = self._processor.process_images(images).to(self.device)
-                # NOTE: exact output keys depend on the colpali-engine version.
-                # Confirm on GPU via probe: expected keys include input_ids /
-                # attention_mask plus image-grid metadata. Do NOT guess — if the
-                # keys below stop matching, update this block and decisions.md.
-                emb = self._model(**batch)
-                vecs = emb.cpu().float().numpy()  # (B, seq, dim)
-            for b, p in enumerate(batch_paths):
-                v, gh, gw, n_special = self._deduce_page_vectors(vecs[b], batch, b)
-                out.append(PatchEmbeddings(vectors=v, grid_h=gh, grid_w=gw,
-                                           dim=v.shape[1], n_special_dropped=n_special))
+        batch_size = self.batch_size
+        i = 0
+        while i < len(image_paths):
+            batch_paths = [Path(p) for p in image_paths[i : i + batch_size]]
+            try:
+                out.extend(self._embed_batch(batch_paths))
+                i += len(batch_paths)
+            except torch.cuda.OutOfMemoryError:
+                torch.cuda.empty_cache()
+                if batch_size <= 1:
+                    raise RuntimeError(
+                        "CUDA OOM with batch_size=1. Lower --dpi (e.g. 100) or use "
+                        "fewer pixels per page, then re-run (embeddings are resumable)."
+                    ) from None
+                batch_size //= 2
+                log.warning("CUDA OOM: retrying with batch_size=%d", batch_size)
+        return out
+
+    def _embed_batch(self, batch_paths: list[Path]) -> list[PatchEmbeddings]:
+        import torch
+
+        from PIL import Image
+
+        images = [Image.open(p).convert("RGB") for p in batch_paths]
+        with torch.no_grad():
+            batch = self._processor.process_images(images).to(self.device)
+            # NOTE: exact output keys depend on the colpali-engine version.
+            # Confirm on GPU via probe: expected keys include input_ids /
+            # attention_mask plus image-grid metadata. Do NOT guess — if the
+            # keys below stop matching, update this block and decisions.md.
+            emb = self._model(**batch)
+            vecs = emb.cpu().float().numpy()  # (B, seq, dim)
+        out = []
+        for b, p in enumerate(batch_paths):
+            v, gh, gw, n_special = self._deduce_page_vectors(vecs[b], batch, b)
+            out.append(PatchEmbeddings(vectors=v, grid_h=gh, grid_w=gw,
+                                       dim=v.shape[1], n_special_dropped=n_special))
         return out
 
     def _deduce_page_vectors(

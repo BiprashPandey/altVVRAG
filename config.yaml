@@ -9,7 +9,7 @@ retriever:
   pooling: "row_col_mean"
 qdrant:
   mode: "local"
-  path: "data/qdrant"
+  path: "data/index/qdrant"   # inside the export dir so index.zip is self-contained
   collection_full: "pages_full"
   collection_pooled: "pages_pooled"
 reader:
