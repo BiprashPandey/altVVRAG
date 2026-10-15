@@ -38,6 +38,8 @@ def run_ingest(
     lang: str = "eng",
     embedder: str = "fake",
     model_id: str = "",
+    device: str = "auto",
+    dtype: str = "bfloat16",
     skip_ocr: bool = False,
     limit: int = 0,
     collection_full: str = "pages_full",
@@ -63,8 +65,13 @@ def run_ingest(
 
     if embedder == "colqwen":
         model_id = model_id or "vidore/colqwen2-v1.0"
-        log.info("loading ColQwen embedder %s (multi-GB download on first run)", model_id)
-        eq = embed_mod.ColQwenEmbedder(model_id=model_id, batch_size=batch_size)
+        log.info(
+            "loading ColQwen embedder %s on %s (%s, multi-GB download on first run)",
+            model_id, device, dtype,
+        )
+        eq = embed_mod.ColQwenEmbedder(
+            model_id=model_id, device=device, dtype=dtype, batch_size=batch_size
+        )
         eq.load()
     elif embedder == "fake":
         fake = embed_mod.FakePatchEmbedder()
@@ -155,6 +162,10 @@ def main() -> None:
     ap.add_argument("--lang", default="eng")
     ap.add_argument("--embedder", default="fake", choices=["fake", "colqwen"])
     ap.add_argument("--model-id", default="")
+    ap.add_argument("--device", default=None,
+                    help="cuda | cpu | auto (default: config retriever.device or auto)")
+    ap.add_argument("--dtype", default=None,
+                    help="bfloat16 | float16 | float32 (default: config retriever.dtype)")
     ap.add_argument("--skip-ocr", action="store_true")
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--batch-size", type=int, default=1,
@@ -168,6 +179,8 @@ def main() -> None:
         lang=args.lang,
         embedder=args.embedder,
         model_id=args.model_id or cfg.retriever.model_id,
+        device=args.device or getattr(cfg.retriever, "device", "auto"),
+        dtype=args.dtype or getattr(cfg.retriever, "dtype", "bfloat16"),
         skip_ocr=args.skip_ocr,
         limit=args.limit,
         collection_full=cfg.qdrant.collection_full,

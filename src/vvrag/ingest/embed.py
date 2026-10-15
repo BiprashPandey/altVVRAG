@@ -6,10 +6,11 @@ Two implementations behind one interface:
 
 GRID SHAPE WARNING (Section 6.3): ColQwen2 uses dynamic resolution, so the
 patch grid differs per page. The grid MUST be derived from the processor's
-output metadata, never assumed. Because torch/colpali-engine are not
-installed on the dev laptop, the ColQwen path is UNVERIFIED here: on the GPU
-machine, run `probe_environment()` first and record the output in
-docs/decisions.md before ingesting (Option A: verify `vidore/colqwen2-v1.0`).
+output metadata, never assumed. Verified against ColQwen2.forward source
+(colpali-engine): the model returns one vector per INPUT token (text
+prefix/suffix included), so the patch block is located exactly via
+``input_ids == image_token_id`` and the grid via ``image_grid_thw`` with the
+spatial merge factor. See docs/decisions.md 2026-10-15 entry.
 All embeddings are saved as float16 .npy + JSON sidecar so ingestion is
 resumable and exportable.
 """
@@ -147,19 +148,19 @@ def probe_environment() -> dict:
 
 
 class ColQwenEmbedder:
-    """Real ColQwen2-family embedder (GPU). UNVERIFIED on dev laptop — see module docstring.
+    """Real ColQwen2-family embedder (GPU; device='auto' resolves cuda->cpu).
 
-    Grid derivation strategy (to be confirmed with probe_environment() output
-    on the GPU machine): the processor returns per-image grid metadata (patch
-    grid before the model's spatial merge); the number of image-token vectors
-    must equal grid_h * grid_w after dropping prefix/special tokens. Any
-    mismatch raises GridMismatchError instead of silently shifting boxes.
+    Grid derivation (verified against ColQwen2.forward source, 2026-10-15):
+    output rows align 1:1 with input_ids; patch rows = positions where
+    input_ids == image_token_id, count must equal prod(image_grid_thw) //
+    merge^2 with grid (h//merge, w//merge). Any mismatch raises
+    GridMismatchError instead of silently shifting boxes.
     """
 
     def __init__(
         self,
         model_id: str = "vidore/colqwen2-v1.0",
-        device: str = "cuda",
+        device: str = "auto",
         dtype: str = "bfloat16",
         batch_size: int = 1,
     ) -> None:
@@ -170,6 +171,15 @@ class ColQwenEmbedder:
         self._model = None
         self._processor = None
 
+    def _resolve_device(self) -> str:
+        """Map 'auto' -> 'cuda' when usable, else 'cpu'. Called in load()."""
+        import torch
+
+        if self.device == "auto":
+            cuda_built = getattr(torch.version, "cuda", None) is not None
+            return "cuda" if (cuda_built and torch.cuda.is_available()) else "cpu"
+        return self.device
+
     def load(self) -> None:
         try:
             import torch
@@ -179,6 +189,38 @@ class ColQwenEmbedder:
                 "ColQwenEmbedder needs torch + colpali-engine on a GPU machine "
                 f"(see notebooks/ingest_colab.ipynb): {e}"
             ) from e
+        # Fail fast BEFORE the multi-GB download: .to("cuda") on a CPU-only
+        # torch wheel raises cryptic "Torch not compiled with CUDA enabled".
+        resolved = self._resolve_device()
+        if "cuda" in resolved:
+            if getattr(torch.version, "cuda", None) is None:
+                raise RuntimeError(
+                    "CPU-only torch installed (torch.version.cuda is None) but "
+                    f"device={self.device!r} needs CUDA. On Colab, reinstall the "
+                    "CUDA wheel BEFORE importing torch, e.g.: "
+                    "pip install -q torch --index-url "
+                    "https://download.pytorch.org/whl/cu121 ; then Runtime > "
+                    "Restart session and re-run. Do NOT pip install plain "
+                    "'torch' from PyPI on Colab — it overwrites the CUDA build "
+                    "with a CPU wheel."
+                )
+            if not torch.cuda.is_available():
+                raise RuntimeError(
+                    "CUDA torch installed but no GPU is visible "
+                    "(torch.cuda.is_available() is False). In Colab set Runtime "
+                    "> Change runtime type > Hardware accelerator = T4 GPU, then "
+                    "re-run. Verify with: python -c "
+                    "\"import torch; print(torch.__version__, "
+                    "torch.version.cuda, torch.cuda.is_available())\" and "
+                    "!nvidia-smi."
+                )
+        self.device = resolved
+        if self.device == "cpu":
+            log.warning(
+                "ingesting on CPU (%s): ColQwen2 is ~9GB and very slow without "
+                "a GPU — use a T4 runtime for the full corpus.",
+                self.model_id,
+            )
         torch_dtype = {"bfloat16": torch.bfloat16, "float16": torch.float16,
                        "float32": torch.float32}[self.dtype]
         self._processor = ColQwen2Processor.from_pretrained(self.model_id)
@@ -239,46 +281,106 @@ class ColQwenEmbedder:
                                        dim=v.shape[1], n_special_dropped=n_special))
         return out
 
+    def _merge_size(self) -> int:
+        """Spatial merge factor (default 2). Read from model/processor when available."""
+        for obj in (self._model, self._processor,
+                    getattr(self._processor, "image_processor", None)):
+            for attr in ("spatial_merge_size", "merge_size"):
+                v = getattr(obj, attr, None) if obj is not None else None
+                if isinstance(v, int) and v >= 1:
+                    return v
+        return 2
+
+    def _image_token_id(self, batch) -> int | None:
+        """Resolve the image-pad token id used in batch['input_ids']."""
+        for obj in (getattr(self._model, "config", None), self._processor,
+                    getattr(self._processor, "tokenizer", None)):
+            for attr in ("image_token_id",):
+                v = getattr(obj, attr, None) if obj is not None else None
+                if isinstance(v, int) and v >= 0:
+                    return v
+        tok = getattr(self._processor, "tokenizer", None)
+        img_tok = getattr(self._processor, "image_token", None) or "<|image_pad|>"
+        for conv in ("convert_tokens_to_ids",):
+            fn = getattr(tok, conv, None) if tok is not None else None
+            if fn is not None:
+                try:
+                    v = fn(img_tok)
+                    if isinstance(v, int) and v >= 0:
+                        return v
+                except Exception:
+                    continue
+        return None
+
+    @staticmethod
+    def _batch_get(batch, key: str):
+        if isinstance(batch, dict):
+            v = batch.get(key, None)
+            if v is not None:
+                return v
+        return getattr(batch, key, None)
+
     def _deduce_page_vectors(
         self, vecs: np.ndarray, batch, idx: int
     ) -> tuple[np.ndarray, int, int, int]:
-        """Derive (patch_vectors, grid_h, grid_w, n_special) for one image.
+        """Derive (patch_vectors, grid_h, grid_w, n_dropped) for one image.
 
-        Tries processor metadata in order; falls back to an explicit error
-        telling the operator what to record. Never assumes a fixed grid.
+        Verified against ColQwen2.forward (colpali-engine): the model returns
+        one vector per INPUT token, i.e. text prefix/suffix tokens are included
+        alongside image patches (mask_non_image_embeddings=False by default).
+        So the patch block is located exactly via
+        ``batch['input_ids'][idx] == image_token_id`` and the grid comes from
+        ``batch['image_grid_thw'][idx]`` (t, h, w) with spatial merge
+        ``grid = (h//merge, w//merge)``. Never assumes a fixed grid or a fixed
+        prefix length.
         """
+        import torch
+
         seq, dim = vecs.shape
-        candidates: list[tuple[int, int, int]] = []  # (gh, gw, n_special)
-        # Attempt 1: image_grid_thw / grid metadata on the batch (ColQwen2 dynamic res).
+        keys = list(batch.keys()) if isinstance(batch, dict) else []
+        diag = f"batch item {idx} (seq_len={seq}, dim={dim}, batch_keys={keys})"
+
+        thw_raw = None
         for attr in ("image_grid_thw", "image_grid", "grid_thw"):
-            meta = getattr(batch, attr, None)
-            if meta is None and isinstance(batch, dict):
-                meta = batch.get(attr)
-            if meta is not None:
-                try:
-                    import torch
-
-                    if isinstance(meta, torch.Tensor):
-                        meta = meta.cpu().tolist()
-                    gh, gw = self._grid_from_thw(meta[idx] if isinstance(meta[0], (list, tuple)) else meta)
-                    for n_special in (0, 1, 5):
-                        if seq - n_special == gh * gw:
-                            candidates.append((gh, gw, n_special))
-                except Exception:
-                    continue
-        if not candidates:
+            thw_raw = self._batch_get(batch, attr)
+            if thw_raw is not None:
+                break
+        if thw_raw is None:
             raise GridMismatchError(
-                f"could not derive patch grid for batch item {idx} "
-                f"(seq_len={seq}, dim={dim}). Run probe_environment() on the GPU box, "
-                "inspect processor output keys, update _deduce_page_vectors, "
-                "and record in docs/decisions.md."
+                f"could not derive patch grid for {diag}: no image-grid key "
+                f"in batch (tried image_grid_thw/image_grid/grid_thw)."
             )
-        gh, gw, n_special = candidates[0]
-        return vecs[n_special:, :], gh, gw, n_special
-
-    @staticmethod
-    def _grid_from_thw(thw) -> tuple[int, int]:
-        """ColQwen2 spatial merge: patches are merged 2x2 -> grid = (t*h*w merged)."""
+        if isinstance(thw_raw, torch.Tensor):
+            thw_raw = thw_raw.detach().cpu().tolist()
+        thw = thw_raw[idx] if isinstance(thw_raw[0], (list, tuple)) else thw_raw
         t, h, w = (int(x) for x in thw[-3:])
-        merge = 2
-        return h // merge, w // merge
+        merge = self._merge_size()
+        n_image = t * h * w // (merge * merge)
+        gh, gw = h // merge, w // merge
+        if t != 1 or gh * gw != n_image:
+            raise GridMismatchError(
+                f"could not derive patch grid for {diag}: thw={(t, h, w)} "
+                f"merge={merge} gives grid {(gh, gw)} != {n_image} image tokens."
+            )
+
+        input_ids = self._batch_get(batch, "input_ids")
+        img_id = self._image_token_id(batch)
+        if input_ids is not None and img_id is not None:
+            ids = input_ids[idx]
+            if isinstance(ids, torch.Tensor):
+                mask = (ids == img_id).detach().cpu().numpy()
+            else:
+                mask = (np.asarray(ids) == img_id)
+            if int(mask.sum()) == n_image:
+                return vecs[mask, :], gh, gw, int(seq - n_image)
+            raise GridMismatchError(
+                f"could not derive patch grid for {diag}: image-token mask "
+                f"selects {int(mask.sum())} positions, expected {n_image} "
+                f"(thw={(t, h, w)}, image_token_id={img_id})."
+            )
+        raise GridMismatchError(
+            f"could not derive patch grid for {diag}: need input_ids + "
+            f"image_token_id to locate the {n_image} patch vectors "
+            f"(input_ids present: {input_ids is not None}, "
+            f"image_token_id: {img_id})."
+        )
