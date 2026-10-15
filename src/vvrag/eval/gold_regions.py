@@ -18,17 +18,22 @@ def derive_gold_box(
     target = normalize_answer(answer)
     if not target:
         return None
-    # exact: contiguous word run whose normalized join contains the target
+    # exact: contiguous word run whose normalized join contains the target.
+    # NOTE: words normalizing to "" (removed articles like "the") are dropped
+    # BEFORE joining — otherwise their empty slots leave double spaces and
+    # any span crossing an article never matches (found 2026-10-15 on a real
+    # OCR page: "... about [the] Department's ..." missed).
     norm_words = [normalize_answer(w.text) for w in words]
-    joined = " ".join(norm_words)
+    kept = [(w, nw) for w, nw in zip(words, norm_words) if nw]
+    joined = " ".join(nw for _, nw in kept)
     if target in joined:
         # map back: find minimal word span covering the match
         start_char = joined.find(target)
         end_char = start_char + len(target)
         pos, span = 0, []
-        for w, nw in zip(words, norm_words):
+        for w, nw in kept:
             w_end = pos + len(nw)
-            if w_end > start_char and pos < end_char and nw:
+            if w_end > start_char and pos < end_char:
                 span.append(w)
             pos = w_end + 1
         if span:

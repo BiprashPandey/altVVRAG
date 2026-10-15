@@ -41,13 +41,14 @@ def gold_span_words(answer: str, words: list[WordBox]) -> list[WordBox]:
     if not target:
         return []
     norm_words = [normalize_answer(w.text) for w in words]
-    joined = ' '.join(norm_words)
+    kept = [(w, nw) for w, nw in zip(words, norm_words) if nw]
+    joined = ' '.join(nw for _, nw in kept)
     if target in joined:
         s, e = joined.find(target), joined.find(target) + len(target)
         pos, span = 0, []
-        for w, nw in zip(words, norm_words):
+        for w, nw in kept:
             w_end = pos + len(nw)
-            if w_end > s and pos < e and nw:
+            if w_end > s and pos < e:
                 span.append(w)
             pos = w_end + 1
         if span:
