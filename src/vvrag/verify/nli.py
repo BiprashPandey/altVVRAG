@@ -38,8 +38,15 @@ def softmax(logits: np.ndarray) -> np.ndarray:
     return e / e.sum(axis=-1, keepdims=True)
 
 
-def split_windows(premise: str, max_chars: int = 1500) -> list[str]:
-    """Split a long premise into sentence windows (each <= max_chars)."""
+def split_windows(premise: str, max_chars: int = 500) -> list[str]:
+    """Split a long premise into sentence windows (each <= max_chars).
+
+    Kept small on purpose (verified 2026-10-15 on a real OCR page): the
+    cross-encoder's verdict on a VERBATIM sentence flips from 0.995 to 0.002
+    when its window also contains garbled OCR word-salad elsewhere on the
+    page. Max-over-fine-windows isolates evidence sentences; max_chars=1500
+    lumped a whole page into one window and buried them.
+    """
     sents = [s.strip() for s in _SENT_SPLIT.split(premise) if s.strip()] or [premise]
     windows, cur = [], ""
     for s in sents:
