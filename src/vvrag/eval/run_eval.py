@@ -25,7 +25,8 @@ def arm_configs(args) -> list[ArmConfig]:
     base = dict(n_samples=args.n_samples, heat_mode=args.heat_mode,
                 scorer=args.scorer, alpha=args.alpha, delta=args.delta,
                 fixed_tau=args.fixed_tau, reader_acc=args.reader_acc,
-                prefetch_mult=args.prefetch_mult)
+                prefetch_mult=args.prefetch_mult,
+                use_real_nli=not args.fake_nli)
     return [
         ArmConfig(name="baseline", grounding=False, gate="none", **base),
         ArmConfig(name="grounded", grounding=True, gate="none", **base),
@@ -68,6 +69,9 @@ def main() -> None:
     ap.add_argument("--reader-acc", type=float, default=0.7)
     ap.add_argument("--prefetch-mult", type=int, default=4)
     ap.add_argument("--arms", nargs="*", default=ARMS)
+    ap.add_argument("--fake-nli", action="store_true",
+                    help="use FakeNLI instead of downloading the NLI checkpoint "
+                         "(fully offline runs)")
     ap.add_argument("--out", default="")
     ap.add_argument("--all", action="store_true",
                     help="full debug matrix (Definition of Done one-command run)")
@@ -94,18 +98,20 @@ def main() -> None:
     cfgs = [c for c in arm_configs(args) if c.name in args.arms]
     if args.all:
         # core ablations (Section 10.4): heat mean, k=5, alpha grid, hand scorer
-        cfgs += [ArmConfig(name="abl-heat-mean", grounding=True, gate="conformal",
-                           heat_mode="mean", n_samples=args.n_samples, scorer=args.scorer,
-                           alpha=args.alpha, delta=args.delta, reader_acc=args.reader_acc),
-                 ArmConfig(name="abl-k5", grounding=True, gate="conformal",
-                           heat_mode=args.heat_mode, n_samples=5, scorer=args.scorer,
-                           alpha=args.alpha, delta=args.delta, reader_acc=args.reader_acc),
-                 ArmConfig(name="abl-alpha05", grounding=True, gate="conformal",
-                           heat_mode=args.heat_mode, n_samples=args.n_samples, scorer=args.scorer,
-                           alpha=0.05, delta=args.delta, reader_acc=args.reader_acc),
-                 ArmConfig(name="abl-hand", grounding=True, gate="conformal",
-                           heat_mode=args.heat_mode, n_samples=args.n_samples, scorer="hand",
-                           alpha=args.alpha, delta=args.delta, reader_acc=args.reader_acc)]
+        abl_base = dict(grounding=True, gate="conformal", delta=args.delta,
+                        reader_acc=args.reader_acc, use_real_nli=not args.fake_nli)
+        cfgs += [ArmConfig(name="abl-heat-mean", heat_mode="mean",
+                           n_samples=args.n_samples, scorer=args.scorer,
+                           alpha=args.alpha, **abl_base),
+                 ArmConfig(name="abl-k5", heat_mode=args.heat_mode,
+                           n_samples=5, scorer=args.scorer,
+                           alpha=args.alpha, **abl_base),
+                 ArmConfig(name="abl-alpha05", heat_mode=args.heat_mode,
+                           n_samples=args.n_samples, scorer=args.scorer,
+                           alpha=0.05, **abl_base),
+                 ArmConfig(name="abl-hand", heat_mode=args.heat_mode,
+                           n_samples=args.n_samples, scorer="hand",
+                           alpha=args.alpha, **abl_base)]
     for ac in cfgs:
         out = run_arm(ac, index_dir, {"train": train, "calib": calib, "test": test},
                       work_dir=str(run_dir / "work"))
