@@ -67,3 +67,10 @@ def test_vlm_check_disabled_and_mock():
     assert vlm_crop_supports(r2, "img.png", "claim") is False
     r3 = SequenceMockReader(["maybe"])
     assert vlm_crop_supports(r3, "img.png", "claim") is None
+    # realistic JSON-mode replies (GeminiReader forces application/json):
+    assert vlm_crop_supports(
+        SequenceMockReader(['{\n  "answer": "yes"\n}']), "img.png", "c") is True
+    assert vlm_crop_supports(
+        SequenceMockReader(['"no"']), "img.png", "c") is False
+    assert vlm_crop_supports(
+        SequenceMockReader(['Yes, the crop shows it.']), "img.png", "c") is True
