@@ -2,7 +2,7 @@
 import numpy as np
 import pymupdf
 
-from vvrag.ground.boxes import grid_to_boxes, snap_box_to_lines
+from vvrag.ground.boxes import grid_to_boxes, snap_box_to_lines, snap_box_to_words
 from vvrag.ground.crop import crop_union, overlay_heatmap
 from vvrag.ground.heatmap import heat_concentration
 from vvrag.ground.text_in_box import extract_crop_text, words_in_boxes
@@ -60,6 +60,18 @@ def test_snap_expands_to_line_bounds():
     snapped = snap_box_to_lines((110, 105, 180, 115), words)
     assert snapped == (100, 100, 200, 120)
     assert snap_box_to_lines((0, 0, 10, 10), words) == (0, 0, 10, 10)  # nothing inside
+
+
+def test_snap_to_words_word_level():
+    words = [
+        WordBox("d", 0, "total", (100, 100, 150, 120), 0, 0),
+        WordBox("d", 0, "$42", (155, 100, 200, 120), 0, 0),
+        WordBox("d", 0, "other", (400, 400, 450, 420), 1, 0),
+    ]
+    inside, union = snap_box_to_words((110, 105, 180, 115), words)
+    assert [w.text for w in inside] == ["total", "$42"]
+    assert union == (100, 100, 200, 120)  # tight, no padding
+    assert snap_box_to_words((0, 0, 10, 10), words) == ([], (0, 0, 10, 10))
 
 
 def test_crop_and_text_in_box(tmp_path):

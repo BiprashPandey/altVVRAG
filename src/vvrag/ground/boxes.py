@@ -51,6 +51,28 @@ def grid_to_boxes(
     return boxes, mask
 
 
+def snap_box_to_words(
+    box: tuple[int, int, int, int], words: list[WordBox]
+) -> tuple[list[WordBox], tuple[int, int, int, int]]:
+    """Word-level output: words whose centers fall inside the box + their
+    tight union box. Same center-in-box rule as text_in_box.words_in_boxes,
+    so the emitted region is exactly word-aligned (no heat-blob padding).
+    Returns ([], box) when no word center falls inside.
+    """
+    from vvrag.ground.text_in_box import words_in_boxes
+
+    inside = words_in_boxes(words, [box])
+    if not inside:
+        return [], box
+    union = (
+        min(w.box[0] for w in inside),
+        min(w.box[1] for w in inside),
+        max(w.box[2] for w in inside),
+        max(w.box[3] for w in inside),
+    )
+    return inside, union
+
+
 def snap_box_to_lines(
     box: tuple[int, int, int, int], words: list[WordBox]
 ) -> tuple[int, int, int, int]:
