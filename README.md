@@ -44,7 +44,8 @@ calibration). Latest debug table is in `docs/decisions.md` (local-only).
 environment, verifies the retriever checkpoint (**Option A**: tries
 `vidore/colqwen2-v1.0` first, falls back to a working ColPali checkpoint),
 runs `python -m vvrag.ingest.run_ingest --input … --out … --embedder colqwen`,
-and zips `data/index` for download. Unzip into `data/` on the laptop; the
+verifies the manifest (2 docs / 2 pages for the sample set), and zips
+`data/index` for download. Unzip into `data/` on the laptop; the
 online pipeline runs on CPU from the export. CLI:
 
 ```bash
