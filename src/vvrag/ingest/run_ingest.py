@@ -16,6 +16,7 @@ from vvrag.ingest import index as index_mod
 from vvrag.ingest import render as render_mod
 from vvrag.ingest.ocr import needs_ocr, ocr_page
 from vvrag.ingest.pooling import pooled_matrix
+from vvrag.ingest.sentences import build_sentences
 from vvrag.logging_utils import get_logger
 
 log = get_logger(__name__)
@@ -107,6 +108,18 @@ def run_ingest(
                 except Exception as e:
                     log.warning("OCR failed for %s p%d: %s", doc_id, m.page, e)
 
+        # Sentence units (suggestion #1): cite sentences, not words.
+        by_page_sents: dict[int, list] = {}
+        for m in metas:
+            page_words = by_page.get(m.page, [])
+            sents, word_to = build_sentences(page_words)
+            for w, sid in zip(page_words, word_to):
+                w.sent_id = sid
+            by_page_sents[m.page] = sents
+            if sents:
+                log.info("doc %s p%d: %d sentences from %d words",
+                         doc_id, m.page, len(sents), len(page_words))
+
         for m in metas:
             key = (doc_id, m.page)
             if key in done and embed_mod.embedding_exists(emb_dir, doc_id, m.page):
@@ -135,6 +148,7 @@ def run_ingest(
             m.grid_h, m.grid_w = pe.grid_h, pe.grid_w
             index_mod.upsert_page(con, m)
             index_mod.replace_word_boxes(con, by_page.get(m.page, []))
+            index_mod.replace_sentences(con, by_page_sents.get(m.page, []))
             done.add(key)
             stats["pages"] += 1
 
@@ -143,6 +157,7 @@ def run_ingest(
         "input": str(input_dir),
         "stats": stats,
         "word_boxes": index_mod.count_word_boxes(con),
+        "sentences": index_mod.count_sentences(con),
         "sqlite_pages": index_mod.count_pages(con),
     }
     if client is not None:

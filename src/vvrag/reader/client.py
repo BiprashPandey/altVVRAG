@@ -18,7 +18,6 @@ from typing import Sequence
 
 from vvrag.cache import DiskCache
 from vvrag.ratelimit import RateLimiter, retry_with_backoff
-from vvrag.reader.claims import parse_reader_output
 from vvrag.schemas import ReaderSample
 
 CANNED_JSON = json.dumps(
@@ -257,19 +256,90 @@ def run_reader_samples(
     Invalid JSON is retried once per sample, then marked failed
     (answer UNANSWERABLE, raw kept). Returns (samples, n_api_calls).
     """
+    from vvrag.reader.claims import parse_reader_output_full
+
     samples: list[ReaderSample] = []
     api_calls = 0
-    for s in range(n_samples):
-        temp = 0.0 if s == 0 else temperature
+
+    def _one(temp: float) -> tuple[ReaderSample, int]:
         raw = reader.generate(images, prompt, temp, 1)[0]
-        api_calls += 1
-        answer, claims, ok = parse_reader_output(raw, max_claims)
+        calls = 1
+        answer, quote, sids, claims, ok = parse_reader_output_full(raw, max_claims)
         if not ok:  # retry once
             raw = reader.generate(images, prompt, temp, 1)[0]
-            api_calls += 1
-            answer, claims, ok = parse_reader_output(raw, max_claims)
-        samples.append(ReaderSample(sample_id=s, answer=answer, claims=claims, raw=raw))
+            calls += 1
+            answer, quote, sids, claims, ok = parse_reader_output_full(raw, max_claims)
+        return ReaderSample(sample_id=0, answer=answer, claims=claims, raw=raw,
+                            quote=quote, sentence_ids=sids), calls
+
+    for s in range(n_samples):
+        temp = 0.0 if s == 0 else temperature
+        sample, calls = _one(temp)
+        sample.sample_id = s
+        api_calls += calls
+        samples.append(sample)
     return samples, api_calls
+
+
+class FallbackReader(ReaderClient):
+    """Primary reader with a fallback model for quota/availability errors (#9).
+
+    On a `RateLimitError` (or any exception whose message mentions quota /
+    rate / 429 / 503) from the primary, tries the fallback once. If the
+    fallback is None or also fails, the original error propagates so the
+    caller can abstain cleanly.
+    """
+
+    _QUOTA_HINTS = ("429", "quota", "rate limit", "rate_limit", "resource_exhausted",
+                    "503", "overloaded", "unavailable", "high demand")
+
+    def __init__(self, primary: ReaderClient, fallback: ReaderClient | None = None) -> None:
+        self.primary = primary
+        self.fallback = fallback
+        self.fallback_used = 0
+
+    @classmethod
+    def _is_quota(cls, exc: BaseException) -> bool:
+        from vvrag.ratelimit import RateLimitError
+
+        if isinstance(exc, RateLimitError):
+            return True
+        msg = str(exc).lower()
+        return any(h in msg for h in cls._QUOTA_HINTS)
+
+    def generate(self, images, prompt, temperature, n) -> list[str]:
+        try:
+            return self.primary.generate(images, prompt, temperature, n)
+        except Exception as e:  # noqa: BLE001 - only quota-like errors fall back
+            if self.fallback is None or not self._is_quota(e):
+                raise
+            self.fallback_used += 1
+            return self.fallback.generate(images, prompt, temperature, n)
+
+
+def _build_reader(provider: str, model: str, max_output_tokens: int) -> ReaderClient:
+    """Construct a raw (uncached) reader for one provider."""
+    from vvrag.config import env
+
+    provider = provider.lower()
+    if provider in ("mock", "test"):
+        return MockReader()
+    if provider == "gemini":
+        key = env("GEMINI_API_KEY")
+        if not key:
+            raise RuntimeError("GEMINI_API_KEY missing (see .env.example)")
+        return GeminiReader(model, key, max_output_tokens)
+    if provider == "groq":
+        key = env("GROQ_API_KEY")
+        if not key:
+            raise RuntimeError("GROQ_API_KEY missing (see .env.example)")
+        return GroqReader(model, key, max_output_tokens)
+    if provider == "openrouter":
+        key = env("OPENROUTER_API_KEY")
+        if not key:
+            raise RuntimeError("OPENROUTER_API_KEY missing (see .env.example)")
+        return OpenRouterReader(model, key, max_output_tokens)
+    raise ValueError(f"unknown reader provider: {provider}")
 
 
 def create_reader(
@@ -279,28 +349,16 @@ def create_reader(
     limiter: RateLimiter,
     max_retries: int = 6,
     max_output_tokens: int = 512,
+    fallback_provider: str = "",
+    fallback_model: str = "",
 ) -> ReaderClient:
-    from vvrag.config import env
-
-    provider = provider.lower()
-    if provider in ("mock", "test"):
-        return CachedReader(MockReader(), cache, limiter, provider, model, max_retries)
-    if provider == "gemini":
-        key = env("GEMINI_API_KEY")
-        if not key:
-            raise RuntimeError("GEMINI_API_KEY missing (see .env.example)")
-        return CachedReader(GeminiReader(model, key, max_output_tokens),
-                            cache, limiter, provider, model, max_retries)
-    if provider == "groq":
-        key = env("GROQ_API_KEY")
-        if not key:
-            raise RuntimeError("GROQ_API_KEY missing (see .env.example)")
-        return CachedReader(GroqReader(model, key, max_output_tokens),
-                            cache, limiter, provider, model, max_retries)
-    if provider == "openrouter":
-        key = env("OPENROUTER_API_KEY")
-        if not key:
-            raise RuntimeError("OPENROUTER_API_KEY missing (see .env.example)")
-        return CachedReader(OpenRouterReader(model, key, max_output_tokens),
-                            cache, limiter, provider, model, max_retries)
-    raise ValueError(f"unknown reader provider: {provider}")
+    """Build a CachedReader, optionally wrapped with a FallbackReader (#9)."""
+    inner: ReaderClient = _build_reader(provider, model, max_output_tokens)
+    if fallback_provider or fallback_model:
+        try:
+            fb = _build_reader(fallback_provider or provider,
+                               fallback_model or model, max_output_tokens)
+            inner = FallbackReader(inner, fb)
+        except Exception:
+            pass  # no key/sdk for the fallback: keep primary only
+    return CachedReader(inner, cache, limiter, provider, model, max_retries)

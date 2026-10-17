@@ -8,6 +8,7 @@ import numpy as np
 
 from vvrag.eval.arms import PredRecord
 from vvrag.eval.metrics import (
+    abstention_metrics,
     aurc,
     bootstrap_ci,
     center_inside,
@@ -24,6 +25,9 @@ def summarize(records: list[PredRecord], arm: str) -> dict:
     answered = np.array([not r.result.abstained for r in records])
     scores = np.array([r.result.score for r in records])
     sel = selective_stats(answered, correct)
+    # suggestion #8: split coverage by answerable vs unanswerable items
+    una = np.array([bool(getattr(r.item, "is_unanswerable", False)) for r in records])
+    abst = abstention_metrics(answered, correct, una if una.any() else None)
     loc = [r for r in records if r.gold_box is not None and r.result.evidence.boxes]
     ious = np.array([iou(r.result.evidence.boxes[0], r.gold_box) for r in loc])
     lat = np.array([r.result.timings.get("total", 0.0) for r in records])
@@ -42,6 +46,10 @@ def summarize(records: list[PredRecord], arm: str) -> dict:
         "iou_hit05": float((ious >= 0.5).mean()) if len(ious) else 0.0,
         "center_in_box": float(np.mean([center_inside(r.result.evidence.boxes[0], r.gold_box) for r in loc])) if loc else 0.0,
         **sel,
+        "abstention": abst,
+        "answerable_coverage": abst.get("answerable_coverage", sel["coverage"]),
+        "unanswerable_abstention_rate": abst.get("unanswerable_abstention_rate", 0.0),
+        "false_answer_rate_on_unanswerable": abst.get("false_answer_rate_on_unanswerable", 0.0),
         "aurc": aurc(scores, (~correct).astype(int)) if len(records) else 0.0,
         "realized_accepted_error": float((~correct[answered]).mean()) if answered.any() else 0.0,
         "latency_mean_s": float(lat.mean()) if len(lat) else 0.0,
@@ -52,16 +60,19 @@ def summarize(records: list[PredRecord], arm: str) -> dict:
 
 
 def main_table_rows(summaries: list[dict]) -> tuple[str, str]:
-    cols = ["arm", "n", "EM", "F1", "Hit@3", "IoU>=.3", "cover", "sel_acc", "conf_wrong", "AURC"]
+    cols = ["arm", "n", "EM", "F1", "Hit@3", "IoU>=.3", "cover", "sel_acc",
+            "conf_wrong", "AURC", "ans_cover", "una_abst"]
     md = ["| " + " | ".join(cols) + " |", "|" + "|".join(["---"] * len(cols)) + "|"]
-    tex = ["\\begin{tabular}{lccccccccc}", "\\toprule",
-           "arm & n & EM & F1 & Hit@3 & IoU$\\geq$.3 & cover & sel.acc & conf.wr & AURC \\\\", "\\midrule"]
+    tex = ["\\begin{tabular}{lccccccccccc}", "\\toprule",
+           "arm & n & EM & F1 & Hit@3 & IoU$\\geq$.3 & cover & sel.acc & conf.wr & AURC & ans.cover & una.abst \\\\", "\\midrule"]
     for s in summaries:
         em, f1 = s["answer_em"]["mean"], s["answer_f1"]["mean"]
         row = [s["arm"], str(s["n"]), f"{em:.3f}", f"{f1:.3f}",
                f"{s['retrieval_hit3']:.3f}", f"{s['iou_hit03']:.3f}",
                f"{s['coverage']:.3f}", f"{s['selective_accuracy']:.3f}",
-               f"{s['confident_wrong_rate']:.3f}", f"{s['aurc']:.3f}"]
+               f"{s['confident_wrong_rate']:.3f}", f"{s['aurc']:.3f}",
+               f"{s.get('answerable_coverage', 0.0):.3f}",
+               f"{s.get('unanswerable_abstention_rate', 0.0):.3f}"]
         md.append("| " + " | ".join(row) + " |")
         tex.append(" & ".join(row) + " \\\\")
     tex += ["\\bottomrule", "\\end{tabular}"]

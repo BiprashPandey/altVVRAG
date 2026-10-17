@@ -15,20 +15,20 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from vvrag.eval.datasets import QAItem
-from vvrag.eval.gold_regions import derive_gold_box
-from vvrag.eval.metrics import center_inside, exact_match, f1, hit_at_k, iou, mrr
+from vvrag.eval.gold_regions import derive_answer_words, derive_gold_box
+from vvrag.eval.metrics import center_inside, exact_match, f1, hit_at_k, iou, mrr, union_iou
 from vvrag.gate.conformal import apply_gate as conformal_apply
 from vvrag.gate.conformal import select_tau
 from vvrag.gate.fixed import apply_fixed
 from vvrag.gate.scorer import LogisticScorer, features_to_matrix, hand_weighted
-from vvrag.ground.boxes import grid_to_boxes
+from vvrag.ground.boxes import answer_to_line_boxes, grid_to_boxes, snap_boxes_to_word_lines
 from vvrag.ground.crop import crop_union
 from vvrag.ground.heatmap import build_heatmap, heat_concentration
 from vvrag.ground.text_in_box import extract_crop_text
 from vvrag.ingest import index as index_mod
 from vvrag.ingest.embed import load_embedding
 from vvrag.logging_utils import get_logger
-from vvrag.reader.claims import Claim
+from vvrag.reader.claims import Claim, normalize_answer
 from vvrag.retrieve.two_stage import TwoStageRetriever, retrieval_margin
 from vvrag.schemas import Evidence, Features, ReaderSample, Result, WordBox
 from vvrag.verify.consistency import agreement
@@ -177,8 +177,10 @@ class OfflineSystem:
 
         evidence = Evidence(doc_id=item.gold_doc, page=item.gold_page)
         crop_text, heat_conc = "", 0.0
+        page_words: list = []
         if self.cfg.grounding and top is not None:
             (meta_row, words) = self.page_data(top.doc_id, top.page)
+            page_words = words
             W, H, gh, gw, img_path = meta_row[0], meta_row[1], meta_row[3], meta_row[4], meta_row[6]
             pe = load_embedding(f"{self.index_dir}/embeddings", top.doc_id, top.page)
             toks = [t for t in item.question.lower().split() if t][:8] or ["q"]
@@ -186,6 +188,9 @@ class OfflineSystem:
             hm, norm = build_heatmap(qv, toks, pe.vectors, gh, gw,
                                      top.doc_id, top.page, mode=self.cfg.heat_mode)
             boxes, mask = grid_to_boxes(norm, W, H)
+            # rec 4+5: heatmap is a prior — snap to word lines, split per line
+            _, line_boxes = snap_boxes_to_word_lines(boxes, words)
+            boxes = line_boxes or boxes
             heat_conc = heat_concentration(norm, mask)
             if boxes:
                 safe_qid = "".join(c if c.isalnum() or c in "-_." else "_" for c in item.question_id)
@@ -206,22 +211,34 @@ class OfflineSystem:
                 if evidence.crop_text:
                     claim_probs.extend(self.nli.entail_probs(evidence.crop_text, [c.text]))
         emin, emean = aggregate_entailment(claim_probs) if claim_probs else (None, None)
+        # rec 1+6: localize the (simulated) answer post-hoc; UNANSWERABLE -> abstain
+        loc_score, ev_valid = 0.0, False
+        if page_words and normalize_answer(samples[0].answer) != "unanswerable":
+            span, score = derive_answer_words(samples[0].answer, page_words)
+            if span:
+                evidence.boxes = answer_to_line_boxes(span) or evidence.boxes
+                loc_score, ev_valid = float(score), bool(score >= 0.8)
         feats = build_features(agreement=agr, entail_min=emin,
                                retrieval_margin=margin, heat_concentration=heat_conc,
                                n_claims=len(samples[0].claims),
-                               crop_has_text=bool(evidence.crop_text))
+                               crop_has_text=bool(evidence.crop_text),
+                               localize_score=loc_score, evidence_valid=ev_valid)
         if self.cfg.scorer == "learned":
             try:
                 score = float(self.scorer.predict_score(features_to_matrix([feats]))[0])
             except RuntimeError:
-                score = hand_weighted(agr, emin, heat_conc)  # unfitted fallback
+                score = hand_weighted(agr, emin, heat_conc, loc_score, ev_valid)  # unfitted fallback
         else:
-            score = hand_weighted(agr, emin, heat_conc)
+            score = hand_weighted(agr, emin, heat_conc, loc_score, ev_valid)
 
-        if self.cfg.gate == "none":
+        if normalize_answer(samples[0].answer) == "unanswerable":
+            abstained = True
+        elif self.cfg.gate == "none":
             abstained = False
         elif self.cfg.gate == "fixed":
             abstained = not apply_fixed(score, self.cfg.fixed_tau)
+            if abstained and ev_valid and loc_score >= 0.9:
+                abstained = False  # rec 6 rescue
         else:
             abstained = not conformal_apply(score, self.tau)
 
@@ -232,7 +249,7 @@ class OfflineSystem:
         cf1, cem = f1(res.answer, item.gold_answer), exact_match(res.answer, item.gold_answer)
         (_, gold_words) = self.page_data(item.gold_doc, item.gold_page)
         gold_box = derive_gold_box(item.gold_answer, gold_words)
-        iou_v = iou(evidence.boxes[0], gold_box) if evidence.boxes and gold_box else None
+        iou_v = union_iou(evidence.boxes, gold_box) if evidence.boxes and gold_box else None
         return PredRecord(item=item, result=res, correct_f1=cf1, correct_em=cem,
                           gold_box=gold_box, iou=iou_v,
                           hit3=hit_at_k(rank_pages, (item.gold_doc, item.gold_page), 3),
@@ -253,7 +270,9 @@ class OfflineSystem:
         try:
             s = self.scorer.predict_score(X)
         except RuntimeError:
-            s = np.array([hand_weighted(f.agreement, f.entail_prob, f.heat_concentration)
+            s = np.array([hand_weighted(f.agreement, f.entail_prob, f.heat_concentration,
+                                        getattr(f, "localize_score", 0.0),
+                                        getattr(f, "evidence_valid", False))
                           for f in (r.result.features for r in records)])
         for r, v in zip(records, s):
             r.result.score = float(v)

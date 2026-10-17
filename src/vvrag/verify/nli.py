@@ -114,6 +114,85 @@ def aggregate_entailment(probs: list[float]) -> tuple[float, float]:
     return float(min(probs)), float(sum(probs) / len(probs))
 
 
+def qa_to_statement(question: str, answer: str) -> str:
+    """Turn (question, answer) into a declarative statement for NLI (#4).
+
+    "What is the title of the document?" + "Sample Document for PDF Testing"
+    -> "The title of the document is Sample Document for PDF Testing."
+    Falls back to "The answer to '<q>' is '<a>'." when the question can't be
+    templated. This makes the entailment check read as claim support rather
+    than question-matching.
+    """
+    q = " ".join((question or "").strip().rstrip("?").split())
+    a = " ".join((answer or "").strip().split())
+    if not q or not a:
+        return a
+    low = q.lower()
+    for lead in ("what is the ", "what was the ", "what is ", "what was ",
+                 "which ", "who is the ", "who was the ", "where is the ",
+                 "when is the ", "how many ", "how much "):
+        if low.startswith(lead):
+            subject = q[len(lead):].strip()
+            if subject:
+                return f"The {subject} is {a}."
+    return f"The answer to \"{q}\" is {a}."
+
+
+def entail_statement(
+    entailer,
+    premise_texts: list[str],
+    question: str,
+    answer: str,
+) -> float:
+    """Entailment prob of the declarative Q+A statement by the cited sentences."""
+    if not premise_texts:
+        return 0.5
+    statement = qa_to_statement(question, answer)
+    if not statement:
+        return 0.5
+    premise = " ".join(premise_texts)
+    return float(entailer.entail_probs(premise, [statement])[0])
+
+
+def minimal_entailing_span(
+    claim: str,
+    sentences: list[str],
+    entail_fn,
+    threshold: float = 0.5,
+) -> list[str]:
+    """Two-stage narrow (rec 3): shrink a region to its minimal entailing window.
+
+    `sentences` is the region (heatmap/span pick) in order. `entail_fn(window,
+    claim) -> float` is any entailment scorer (e.g. NLIEntailer over the joined
+    window). Greedily drop leading/trailing sentences while entailment stays
+    >= threshold; the last passing window is the minimal supporting span.
+    Handles paraphrased answers (q4) where plain text matching fails.
+    Returns [] when even the full region fails.
+    """
+    sents = [s.strip() for s in sentences if s and s.strip()]
+    if not sents or not claim.strip():
+        return []
+    join = lambda ws: " ".join(ws).strip()
+    if entail_fn(join(sents), claim) < threshold:
+        return []
+    window = list(sents)
+    improved = True
+    while improved and len(window) > 1:
+        improved = False
+        for drop_first in (True, False):
+            if len(window) <= 1:
+                break
+            cand = window[1:] if drop_first else window[:-1]
+            try:
+                score = entail_fn(join(cand), claim)
+            except Exception:
+                continue
+            if score >= threshold:
+                window = cand
+                improved = True
+    return window
+
+
 class FakeNLI:
     """Deterministic overlap heuristic for tests (no model download)."""
 

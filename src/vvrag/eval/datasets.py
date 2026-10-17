@@ -22,6 +22,7 @@ class QAItem:
     gold_doc: str
     gold_page: int
     gold_patch_idx: tuple[int, ...] = ()  # flat patch indices tied to answer location
+    is_unanswerable: bool = False  # suggestion #8: gold says answer is absent
 
 
 @dataclass
@@ -53,13 +54,17 @@ _FACTS = ["revenue was {v} million", "budget totals {v} million",
 
 
 def build_synthetic_set(out_dir: str | Path, n_docs: int = 10, pages_per_doc: int = 2,
-                        seed: int = 42, dpi: int = 150) -> EvalSet:
+                        seed: int = 42, dpi: int = 150,
+                        unanswerable_per_doc: int = 1) -> EvalSet:
     """Create PDFs with planted facts + questions. Answers are exact page strings.
 
     Planting (ties text location to patch cells, so C1 grounding is genuinely
     tested): each fact sentence is rendered inside a known 2x2 patch-cell block
     of the FakePatchEmbedder grid; its flat patch indices are stored on the
     item and used to build the query (arms.query_vecs).
+
+    `unanswerable_per_doc` also plants questions about facts that are NOT in
+    the deck (suggestion #8: the gate must abstain on these).
     """
     import pymupdf
 
@@ -102,6 +107,13 @@ def build_synthetic_set(out_dir: str | Path, n_docs: int = 10, pages_per_doc: in
                         gold_patch_idx=idx))
                 for j in range(4):  # filler at bottom, clear of fact blocks
                     page.insert_text((50, 730 + j * 18), "Supplementary notes follow.")
+            for u in range(unanswerable_per_doc):
+                # a plausible-but-absent fact: the gate must abstain (#8)
+                items.append(QAItem(
+                    question_id=f"{doc_id}-una{u}", deck_id=doc_id,
+                    question=f"What was the {doc_id} liability figure on page 0?",
+                    gold_answer="UNANSWERABLE", gold_doc=doc_id, gold_page=0,
+                    is_unanswerable=True))
             doc.save(pdf)
     return EvalSet(items=items)
 

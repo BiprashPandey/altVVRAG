@@ -21,6 +21,7 @@ class RetrieverConfig:
     prefetch_k_multiplier: int = 4
     top_k: int = 3
     pooling: str = "row_col_mean"
+    query_encoder: str = "colqwen"
 
 
 @dataclass
@@ -39,6 +40,13 @@ class ReaderConfig:
     temperature: float = 0.7
     max_output_tokens: int = 512
     max_claims: int = 5
+    fallback_provider: str = ""
+    fallback_model: str = ""
+
+
+@dataclass
+class VerifyConfig:
+    quote_threshold: float = 0.8
 
 
 @dataclass
@@ -53,6 +61,8 @@ class GroundConfig:
     min_box_area_frac: float = 0.002
     max_boxes: int = 3
     box_padding_px: int = 8
+    heatmap_as_prior_only: bool = True
+    smooth_sigma: float = 0.0
 
 
 @dataclass
@@ -61,6 +71,8 @@ class GateConfig:
     alpha: float = 0.10
     delta: float = 0.10
     fixed_tau: float = 0.5
+    scorer_path: str = "data/gate/scorer.pkl"
+    tau_path: str = "data/gate/tau.json"
 
 
 @dataclass
@@ -84,6 +96,7 @@ class AppConfig:
     qdrant: QdrantConfig = field(default_factory=QdrantConfig)
     reader: ReaderConfig = field(default_factory=ReaderConfig)
     nli: NliConfig = field(default_factory=NliConfig)
+    verify: VerifyConfig = field(default_factory=VerifyConfig)
     ground: GroundConfig = field(default_factory=GroundConfig)
     gate: GateConfig = field(default_factory=GateConfig)
     ratelimit: RatelimitConfig = field(default_factory=RatelimitConfig)
@@ -124,6 +137,7 @@ def load_config(config_path: str | Path = "config.yaml", dotenv_path: str | Path
         qdrant=QdrantConfig(**data.get("qdrant", {})),
         reader=ReaderConfig(**data.get("reader", {})),
         nli=NliConfig(**data.get("nli", {})),
+        verify=VerifyConfig(**data.get("verify", {})),
         ground=GroundConfig(**data.get("ground", {})),
         gate=GateConfig(**data.get("gate", {})),
         ratelimit=RatelimitConfig(**data.get("ratelimit", {})),

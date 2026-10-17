@@ -7,18 +7,48 @@ from vvrag.reader.claims import (
     answers_match,
     normalize_answer,
     parse_reader_output,
+    parse_reader_output_full,
     token_f1,
+    validate_evidence_ids,
+    validate_sentence_ids,
 )
 from vvrag.reader.client import SequenceMockReader, run_reader_samples
-from vvrag.reader.prompts import build_prompt
+from vvrag.reader.prompts import build_prompt, build_sentence_prompt
+from vvrag.schemas import SentenceSpan
 
 GOOD = '{"answer": "42 units", "claims": [{"text": "The chart shows 42 units.", "answer_span": "42 units"}]}'
+
+
+def _sents():
+    return [SentenceSpan("d", 0, 0, "Nepal is a country.", (0, 0, 100, 20)),
+            SentenceSpan("d", 0, 1, "Rastra means nation.", (0, 30, 100, 50))]
 
 
 def test_prompt_contract():
     p = build_prompt("What is total?", crop_text="total 42", max_claims=3)
     assert "UNANSWERABLE" in p and "at most 3 claims" in p and "total 42" in p
     assert '"answer"' in p and '"claims"' in p
+    g = build_sentence_prompt("q?", _sents(), "crop", max_claims=5)
+    assert "[S0] Nepal is a country." in g and "sentence_ids" in g
+    assert "verbatim extractive" in g  # rec 7: short verbatim answers
+
+
+def test_sentence_ids_parse_and_validate():
+    raw = ('{"answer": "Nepal Rastra", "quote": "Nepal Rastra", "sentence_ids": [17, 18],'
+           ' "claims": [{"text": "x", "answer_span": "Nepal Rastra",'
+           ' "evidence_sentence_ids": [17, 18]}]}')
+    ans, quote, sids, claims, ok = parse_reader_output_full(raw)
+    assert ok and sids == [17, 18] and claims[0].evidence_sentence_ids == [17, 18]
+    # legacy 3-tuple wrapper still works
+    ans2, claims2, ok2 = parse_reader_output(raw)
+    assert ok2 and answers_match(ans2, "Nepal Rastra")
+    assert validate_sentence_ids([17, 18, 19], 215) == (True, True)
+    assert validate_sentence_ids([17, 19], 215) == (True, True)  # non-consecutive ok
+    assert validate_sentence_ids([999], 215) == (False, False)  # out of range
+    assert validate_sentence_ids(None, 215) == (False, False)
+    assert validate_sentence_ids([], 215) == (False, False)
+    # legacy alias maps word-id callers to the sentence validator
+    assert validate_evidence_ids([17, 19], 215) == (True, True)
 
 
 def test_parse_valid_fenced_and_capped():

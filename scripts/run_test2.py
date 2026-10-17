@@ -25,8 +25,9 @@ REPO = Path(__file__).resolve().parent.parent
 INDEX = REPO / 'data' / 'index'
 GOLD = REPO / 'data' / 'testrun2_gold.json'
 
-from vvrag.eval.gold_regions import derive_gold_box  # noqa: E402
-from vvrag.eval.metrics import exact_match, f1, iou, center_inside  # noqa: E402
+from vvrag.eval.gold_regions import derive_answer_words, derive_gold_box  # noqa: E402
+from vvrag.eval.metrics import (exact_match, f1, iou, center_inside, max_over_golds,  # noqa: E402
+                                per_line_iou, union_iou, word_precision_recall_f1)
 from vvrag.ground.boxes import snap_box_to_words  # noqa: E402
 from vvrag.reader.claims import normalize_answer  # noqa: E402
 from vvrag.schemas import WordBox  # noqa: E402
@@ -34,44 +35,26 @@ from vvrag.ui.qa import answer_question, page_words  # noqa: E402
 
 
 def gold_span_words(answer: str, words: list[WordBox]) -> list[WordBox]:
-    """Mirror of derive_gold_box, but returns the covering WORDS."""
-    import difflib
+    """Covering WORDS for an answer (shared impl, rec 1+7)."""
+    span, _ = derive_answer_words(answer, words)
+    return span
 
-    target = normalize_answer(answer)
-    if not target:
-        return []
-    norm_words = [normalize_answer(w.text) for w in words]
-    kept = [(w, nw) for w, nw in zip(words, norm_words) if nw]
-    joined = ' '.join(nw for _, nw in kept)
-    if target in joined:
-        s, e = joined.find(target), joined.find(target) + len(target)
-        pos, span = 0, []
-        for w, nw in kept:
-            w_end = pos + len(nw)
-            if w_end > s and pos < e:
-                span.append(w)
-            pos = w_end + 1
-        if span:
-            return span
-    best, best_r = None, 0.0
-    for w, nw in zip(words, norm_words):
-        r = difflib.SequenceMatcher(None, target, nw).ratio()
-        if r > best_r:
-            best, best_r = w, r
-    if best is not None and best_r >= 0.8:
-        return [w for w in words
-                if w.block_id == best.block_id and w.line_id == best.line_id]
-    return []
+
+def gold_answers(item: dict) -> list[str]:
+    """Several acceptable golds (rec 7): q5 short + long both correct."""
+    ans = item['answer']
+    extra = item.get('gold_answers') or item.get('alt_answers') or []
+    seen = []
+    for a in [ans, *extra]:
+        if a and a not in seen:
+            seen.append(a)
+    return seen
 
 
 def word_pr(pred: list[WordBox], gold: list[WordBox]) -> tuple[float, float]:
-    """Word-level precision/recall on (text, box) identity."""
-    if not pred or not gold:
-        return 0.0, 0.0
-    g = {(w.text, w.box) for w in gold}
-    p = [(w.text, w.box) for w in pred]
-    hit = sum(1 for t in p if t in g)
-    return hit / max(1, len(p)), hit / max(1, len(g))
+    """Word-level precision/recall on (text, box) identity (primary metric)."""
+    p, r, _ = word_precision_recall_f1(pred, gold)
+    return p, r
 
 
 def main() -> None:
@@ -85,9 +68,12 @@ def main() -> None:
     for item in gold:
         qid, question, answer = item['qid'], item['question'], item['answer']
         words = page_words(con, 'testimg', 0)
+        golds = gold_answers(item)
+        # primary box/words for display; IoU/word scores take max over variants
         gbox = derive_gold_box(answer, words)
         gwords = gold_span_words(answer, words)
         grow = {'qid': qid, 'question': question, 'gold_answer': answer,
+                'gold_answers': golds,
                 'gold_box': list(gbox) if gbox else None,
                 'gold_words': [w.text for w in gwords]}
         print(f'--- {qid}: {question[:70]}')
@@ -111,29 +97,47 @@ def main() -> None:
                     continue
                 ev = res.get('evidence', {})
                 pred_boxes = [tuple(b) for b in ev.get('boxes', [])]
-                pred_words: list[WordBox] = []
-                for b in pred_boxes:
-                    inside, _union = snap_box_to_words(b, words)
-                    pred_words.extend(inside)
+                # rec 7: word-F1 primary; boxes are per-line so also report
+                # union-IoU + per-line IoU (secondary) and multi-gold max EM/F1.
+                loc = ev.get('localize', {}) or {}
+                from vvrag.ground.text_in_box import words_in_boxes
+                uniq_all = words_in_boxes(words, pred_boxes) if pred_boxes else []
                 seen, uniq = set(), []
-                for w in pred_words:
+                for w in uniq_all:
                     if (w.text, w.box) not in seen:
                         seen.add((w.text, w.box))
                         uniq.append(w)
-                wp, wr = word_pr(uniq, gwords)
+                golds = gold_answers({**item, 'answer': answer})
+                em = max_over_golds(res.get('answer') or '', golds, exact_match)
+                f1v = max_over_golds(res.get('answer') or '', golds, f1)
+                # localization scored against best gold variant (rec 7)
+                best_wp, best_wr, best_wf1, best_u, best_pl = 0.0, 0.0, 0.0, 0.0, 0.0
+                for g in golds:
+                    gw = gold_span_words(g, words)
+                    gb = derive_gold_box(g, words)
+                    p, r, f1w = word_precision_recall_f1(uniq, gw)
+                    u = union_iou(pred_boxes, tuple(gb)) if pred_boxes and gb else 0.0
+                    pl = per_line_iou(pred_boxes, tuple(gb)) if pred_boxes and gb else 0.0
+                    if (f1w, u) >= (best_wf1, best_u):
+                        best_wp, best_wr, best_wf1, best_u, best_pl = p, r, f1w, u, pl
+                wp, wr, wf1, u_iou, pl_iou = best_wp, best_wr, best_wf1, best_u, best_pl
                 row = dict(grow)
                 row.update({
                     'reader': reader_mode, 'grounding': grounding,
                     'answer': res.get('answer'), 'abstained': res.get('abstained'),
+                    'abstain_reason': res.get('abstain_reason', ''),
                     'score': res.get('score'),
-                    'em': exact_match(res.get('answer') or '', answer),
-                    'f1': f1(res.get('answer') or '', answer),
+                    'em': em,
+                    'f1': f1v,
                     'pred_boxes': [list(b) for b in pred_boxes],
                     'pred_words': [w.text for w in uniq],
-                    'iou': iou(pred_boxes[0], tuple(gbox)) if pred_boxes and gbox else 0.0,
+                    'iou': round(u_iou, 4),
+                    'per_line_iou': round(pl_iou, 4),
                     'center_inside': bool(center_inside(pred_boxes[0], tuple(gbox)))
                     if pred_boxes and gbox else False,
                     'word_p': round(wp, 3), 'word_r': round(wr, 3),
+                    'word_f1': round(wf1, 3),
+                    'localize': loc,
                     'claims': res.get('claims'), 'samples': res.get('samples'),
                     'features': res.get('features'), 'api_calls': res.get('api_calls'),
                     'timings': res.get('timings'),
@@ -142,8 +146,9 @@ def main() -> None:
                 rows.append(row)
                 print(f"    {reader_mode}/{grounding}: ans={row['answer']!r:.60} "
                       f"EM={row['em']} F1={row['f1']:.2f} IoU={row['iou']:.2f} "
-                      f"wP/R={row['word_p']}/{row['word_r']} score={row['score']} "
-                      f"abst={row['abstained']} api={row['api_calls']}")
+                      f"plIoU={row['per_line_iou']:.2f} "
+                      f"wP/R/F1={row['word_p']}/{row['word_r']}/{row['word_f1']} "
+                      f"score={row['score']} abst={row['abstained']} api={row['api_calls']}")
     (out / 'rows.json').write_text(json.dumps(rows, indent=2, default=str), encoding='utf-8')
     print(f'\nWROTE {out / "rows.json"} ({len(rows)} rows)')
 

@@ -38,6 +38,117 @@ def iou(a: tuple, b: tuple) -> float:
     return inter / union if union > 0 else 0.0
 
 
+def union_box(boxes: list[tuple]) -> tuple | None:
+    """Tight union of a per-line box list (None when empty)."""
+    if not boxes:
+        return None
+    return (min(b[0] for b in boxes), min(b[1] for b in boxes),
+            max(b[2] for b in boxes), max(b[3] for b in boxes))
+
+
+def union_iou(pred_boxes: list[tuple], gold_box: tuple | None) -> float:
+    """IoU of union(pred) vs gold union (secondary metric)."""
+    if not pred_boxes or gold_box is None:
+        return 0.0
+    u = union_box(pred_boxes)
+    return iou(u, gold_box) if u else 0.0
+
+
+def per_line_iou(pred_boxes: list[tuple], gold_box: tuple | None) -> float:
+    """Mean over pred line boxes of IoU(line, gold). Secondary metric.
+
+    Per-line boxes are the primary output (rec 4); this complements
+    union_iou by penalizing stray lines while word-F1 stays primary.
+    """
+    if not pred_boxes or gold_box is None:
+        return 0.0
+    return float(sum(iou(b, gold_box) for b in pred_boxes) / len(pred_boxes))
+
+
+def word_precision_recall_f1(
+    pred_words: list, gold_words: list,
+) -> tuple[float, float, float]:
+    """Word-level P/R/F1 on (text, box) identity. PRIMARY localization metric.
+
+    Accepts WordBox objects or (text, box) tuples. Empty-vs-nonempty -> 0.
+    Both empty -> (0, 0, 0) (nothing to localize; caller decides).
+    """
+    def _key(w):
+        if hasattr(w, "text") and hasattr(w, "box"):
+            return (w.text, tuple(w.box))
+        t, b = w
+        return (t, tuple(b))
+    if not pred_words or not gold_words:
+        return 0.0, 0.0, 0.0
+    g = {_key(w) for w in gold_words}
+    p = [_key(w) for w in pred_words]
+    hit = sum(1 for t in p if t in g)
+    prec = hit / max(1, len(p))
+    rec = hit / max(1, len(g))
+    f1v = 2 * prec * rec / (prec + rec) if (prec + rec) > 0 else 0.0
+    return prec, rec, f1v
+
+
+def max_over_golds(pred: str, golds: list[str], metric) -> float:
+    """Score pred against several acceptable golds, take the max (rec 7).
+
+    E.g. q5 accepts both "Nepal Rastra Bank" and the full sentence.
+    """
+    if not golds:
+        return 0.0
+    return max(metric(pred, g) for g in golds)
+
+
+def sentence_precision_recall(
+    pred_ids: list[int], gold_ids: list[int],
+) -> tuple[float, float, float]:
+    """Sentence-citation P/R/F1 (suggestion #1): did the reader cite the right units?
+
+    Set-based over sentence ids. Empty pred with non-empty gold -> (0, 0, 0);
+    both empty -> (1, 1, 1) (nothing to cite was correctly cited as nothing).
+    """
+    p, g = set(pred_ids or []), set(gold_ids or [])
+    if not p and not g:
+        return 1.0, 1.0, 1.0
+    if not p or not g:
+        return 0.0, 0.0, 0.0
+    hit = len(p & g)
+    prec, rec = hit / len(p), hit / len(g)
+    f1v = 2 * prec * rec / (prec + rec) if (prec + rec) > 0 else 0.0
+    return prec, rec, f1v
+
+
+def abstention_metrics(
+    answered: np.ndarray, correct: np.ndarray,
+    unanswerable: np.ndarray | None = None,
+) -> dict:
+    """Abstention quality (suggestion #8): coverage, selective error,
+    answerable-coverage and unanswerable abstention rate.
+
+    - `answered`/`correct`: bool arrays over all questions.
+    - `unanswerable`: bool mask (True = gold has no answer in the doc). When
+      given, splits coverage into answerable vs unanswerable populations:
+      a good gate answers answerable questions and abstains on unanswerable.
+    """
+    answered = np.asarray(answered, dtype=bool)
+    correct = np.asarray(correct, dtype=bool)
+    n = answered.size
+    stats = selective_stats(answered, correct)
+    stats["n"] = n
+    stats["abstention_rate"] = float((~answered).mean()) if n else 0.0
+    if unanswerable is not None and n:
+        una = np.asarray(unanswerable, dtype=bool)
+        ans_mask = ~una
+        stats["n_answerable"] = int(ans_mask.sum())
+        stats["n_unanswerable"] = int(una.sum())
+        stats["answerable_coverage"] = float(answered[ans_mask].mean()) if ans_mask.any() else 0.0
+        stats["unanswerable_abstention_rate"] = (
+            float((~answered[una]).mean()) if una.any() else 0.0)
+        stats["false_answer_rate_on_unanswerable"] = (
+            float(answered[una].mean()) if una.any() else 0.0)
+    return stats
+
+
 def center_inside(pred: tuple, gold: tuple) -> float:
     cx, cy = (gold[0] + gold[2]) / 2, (gold[1] + gold[3]) / 2
     return 1.0 if pred[0] <= cx <= pred[2] and pred[1] <= cy <= pred[3] else 0.0

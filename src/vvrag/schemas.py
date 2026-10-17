@@ -33,6 +33,7 @@ class WordBox:
     box: tuple[int, int, int, int]  # (x0, y0, x1, y1) pixels
     block_id: int = 0
     line_id: int = 0
+    sent_id: int = -1  # sentence unit index on this page (-1 = not assigned)
 
     def to_dict(self) -> dict:
         d = asdict(self)
@@ -43,7 +44,36 @@ class WordBox:
     def from_dict(cls, d: dict) -> "WordBox":
         d = dict(d)
         d["box"] = tuple(d["box"])
-        return cls(**d)
+        d.setdefault("sent_id", -1)
+        return cls(**{k: d.get(k) for k in
+                      ("doc_id", "page", "text", "box", "block_id", "line_id", "sent_id")})
+
+
+@dataclass
+class SentenceSpan:
+    """Numbered sentence unit with ONE box (multi-line sentences merged).
+
+    The reader cites these ids; final display boxes are the union of the
+    cited sentences' boxes. Coordinates are rendered-page pixels.
+    """
+    doc_id: str
+    page: int
+    sent_id: int
+    text: str
+    box: tuple[int, int, int, int]  # (x0, y0, x1, y1) pixels
+    block_id: int = 0
+
+    def to_dict(self) -> dict:
+        d = asdict(self)
+        d["box"] = list(self.box)
+        return d
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "SentenceSpan":
+        d = dict(d)
+        d["box"] = tuple(d["box"])
+        return cls(**{k: d.get(k) for k in
+                      ("doc_id", "page", "sent_id", "text", "box", "block_id")})
 
 
 @dataclass
@@ -85,30 +115,48 @@ class Evidence:
     crop_path: str = ""
     crop_text: str = ""
     heat_concentration: float = 0.0
+    sentence_ids: list[int] = field(default_factory=list)
+    box_frac: list[tuple[float, float, float, float]] = field(default_factory=list)
+    page_width: int = 0
+    page_height: int = 0
 
     def to_dict(self) -> dict:
         d = asdict(self)
         d["boxes"] = [list(b) for b in self.boxes]
+        d["box_frac"] = [list(b) for b in self.box_frac]
         return d
 
     @classmethod
     def from_dict(cls, d: dict) -> "Evidence":
         d = dict(d)
         d["boxes"] = [tuple(b) for b in d.get("boxes", [])]
-        return cls(**d)
+        d["box_frac"] = [tuple(b) for b in d.get("box_frac", [])]
+        d.setdefault("sentence_ids", [])
+        d.setdefault("page_width", 0)
+        d.setdefault("page_height", 0)
+        return cls(**{k: d.get(k) for k in
+                      ("doc_id", "page", "boxes", "crop_path", "crop_text",
+                       "heat_concentration", "sentence_ids", "box_frac",
+                       "page_width", "page_height")})
 
 
 @dataclass
 class Claim:
     text: str
     answer_span: str | None = None
+    evidence_sentence_ids: list[int] | None = None
 
     def to_dict(self) -> dict:
         return asdict(self)
 
     @classmethod
     def from_dict(cls, d: dict) -> "Claim":
-        return cls(**d)
+        d = dict(d)
+        # legacy word-id fields are NOT mapped: word indices are not sentence
+        # ids; old cached outputs simply have no valid citations.
+        return cls(text=str(d.get("text", "")),
+                   answer_span=d.get("answer_span"),
+                   evidence_sentence_ids=d.get("evidence_sentence_ids"))
 
 
 @dataclass
@@ -117,6 +165,8 @@ class ReaderSample:
     answer: str
     claims: list[Claim] = field(default_factory=list)
     raw: str = ""
+    quote: str = ""
+    sentence_ids: list[int] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
@@ -124,6 +174,8 @@ class ReaderSample:
             "answer": self.answer,
             "claims": [c.to_dict() for c in self.claims],
             "raw": self.raw,
+            "quote": self.quote,
+            "sentence_ids": list(self.sentence_ids),
         }
 
     @classmethod
@@ -133,6 +185,8 @@ class ReaderSample:
             answer=d["answer"],
             claims=[Claim.from_dict(c) for c in d.get("claims", [])],
             raw=d.get("raw", ""),
+            quote=d.get("quote", ""),
+            sentence_ids=list(d.get("sentence_ids", [])),
         )
 
 
@@ -144,13 +198,26 @@ class Features:
     heat_concentration: float = 0.0
     n_claims: int = 0
     crop_has_text: bool = True
+    localize_score: float = 0.0
+    evidence_valid: bool = False
+    quote_match: float = 0.0
 
     def to_dict(self) -> dict:
         return asdict(self)
 
     @classmethod
     def from_dict(cls, d: dict) -> "Features":
-        return cls(**d)
+        # backward compat: older records lack the new gate fields
+        d = dict(d)
+        d.setdefault("localize_score", 0.0)
+        d.setdefault("evidence_valid", False)
+        d.setdefault("quote_match", 0.0)
+        return cls(**{k: d.get(k, v) for k, v in [
+            ("agreement", 0.0), ("entail_prob", None),
+            ("retrieval_margin", 0.0), ("heat_concentration", 0.0),
+            ("n_claims", 0), ("crop_has_text", True),
+            ("localize_score", 0.0), ("evidence_valid", False),
+            ("quote_match", 0.0)]})
 
 
 @dataclass

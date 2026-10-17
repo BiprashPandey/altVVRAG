@@ -76,8 +76,13 @@ def test_fixed_and_gate():
 
 
 def test_scorers():
-    assert hand_weighted(1.0, 1.0, 1.0) == 1.0
-    assert hand_weighted(0.0, None, 0.0) == 0.2  # missing entail -> 0.5*0.4
+    # rec 6: localization is a gate signal; rec 4 adds quote_match
+    # weights 0.25/0.25/0.10/0.20/0.20 (+/-0.05 evidence)
+    import pytest as _pt
+    assert hand_weighted(1.0, 1.0, 1.0) == _pt.approx(0.55)  # no localize/quote, evidence invalid
+    assert hand_weighted(1.0, 1.0, 1.0, 1.0, True, 1.0) == _pt.approx(1.0)  # perfectly localized
+    assert hand_weighted(0.0, None, 0.0) == _pt.approx(0.075)  # missing entail -> 0.5*0.25 - 0.05
+    assert hand_weighted(0.0, None, 0.0, 1.0, True, 1.0) > 0.5  # localize+quote rescue low score
     rng = np.random.default_rng(4)
     feats = [build_features(agreement=rng.random(), entail_min=rng.random(),
                             retrieval_margin=rng.random(), heat_concentration=rng.random(),

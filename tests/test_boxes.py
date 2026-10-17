@@ -2,7 +2,13 @@
 import numpy as np
 import pymupdf
 
-from vvrag.ground.boxes import grid_to_boxes, snap_box_to_lines, snap_box_to_words
+from vvrag.ground.boxes import (
+    answer_to_line_boxes,
+    grid_to_boxes,
+    snap_box_to_lines,
+    snap_box_to_words,
+    snap_boxes_to_word_lines,
+)
 from vvrag.ground.crop import crop_union, overlay_heatmap
 from vvrag.ground.heatmap import heat_concentration
 from vvrag.ground.text_in_box import extract_crop_text, words_in_boxes
@@ -72,6 +78,30 @@ def test_snap_to_words_word_level():
     assert [w.text for w in inside] == ["total", "$42"]
     assert union == (100, 100, 200, 120)  # tight, no padding
     assert snap_box_to_words((0, 0, 10, 10), words) == ([], (0, 0, 10, 10))
+
+
+def test_per_line_boxes_never_one_big_union():
+    # rec 4: multi-line answer -> one tight box per line
+    words = [
+        WordBox("d", 0, "Nepal", (10, 10, 60, 30), 0, 0),
+        WordBox("d", 0, "Rastra", (65, 10, 120, 30), 0, 0),
+        WordBox("d", 0, "Bank", (10, 40, 60, 60), 0, 1),
+    ]
+    boxes = answer_to_line_boxes(words)
+    assert len(boxes) == 2
+    assert boxes[0] == (10, 10, 120, 30)
+    assert boxes[1] == (10, 40, 60, 60)
+    assert answer_to_line_boxes([]) == []
+
+
+def test_snap_boxes_to_word_lines_strips_padding():
+    words = [
+        WordBox("d", 0, "a", (100, 100, 140, 120), 0, 0),
+        WordBox("d", 0, "b", (10, 300, 50, 320), 1, 0),
+    ]
+    inside, lines = snap_boxes_to_word_lines([(0, 0, 500, 500)], words)
+    assert len(lines) == 2 and len(inside) == 2
+    assert snap_boxes_to_word_lines([(0, 0, 5, 5)], words) == ([], [])
 
 
 def test_crop_and_text_in_box(tmp_path):

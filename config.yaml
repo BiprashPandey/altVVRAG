@@ -7,6 +7,7 @@ retriever:
   prefetch_k_multiplier: 4
   top_k: 3
   pooling: "row_col_mean"
+  query_encoder: "colqwen"   # rec 5: real ColQwen text encoder; "fake" for CPU tests
 qdrant:
   mode: "local"
   path: "data/index/qdrant"   # inside the export dir so index.zip is self-contained
@@ -19,6 +20,10 @@ reader:
   temperature: 0.7
   max_output_tokens: 512
   max_claims: 5
+  fallback_provider: ""                 # rec 9: e.g. "groq"; leave empty to disable
+  fallback_model: ""                    # e.g. "llama-3.3-70b-versatile"
+verify:
+  quote_threshold: 0.8                  # rec 4: fuzzy quote-match pass threshold (deterministic)
 nli:
   model_id: "cross-encoder/nli-deberta-v3-base"
   device: "auto"   # auto = cuda when available, else cpu
@@ -27,11 +32,15 @@ ground:
   min_box_area_frac: 0.002
   max_boxes: 3
   box_padding_px: 8
+  heatmap_as_prior_only: true   # rec 5: heatmap picks region, final box always snapped to words
+  smooth_sigma: 0.0
 gate:
   mode: "conformal"
   alpha: 0.10
   delta: 0.10
   fixed_tau: 0.5
+  scorer_path: "data/gate/scorer.pkl"   # rec 5: produced by scripts/calibrate_gate.py
+  tau_path: "data/gate/tau.json"
 ratelimit:
   requests_per_minute: 10
   max_retries: 6

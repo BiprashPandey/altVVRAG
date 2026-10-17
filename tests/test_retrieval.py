@@ -7,7 +7,7 @@ from vvrag.ingest import index as index_mod
 from vvrag.ingest.embed import load_embedding
 from vvrag.ingest.run_ingest import run_ingest
 from vvrag.retrieve.maxsim import maxsim_rank
-from vvrag.retrieve.query_embed import FakeQueryEmbedder
+from vvrag.retrieve.query_embed import FakeQueryEmbedder, create_query_embedder
 from vvrag.retrieve.two_stage import TwoStageRetriever, retrieval_margin
 
 
@@ -53,6 +53,16 @@ def test_fake_query_embedder_deterministic():
     v2, t2 = e.embed_query("What is the total revenue?")
     assert t1 == ["what", "is", "the", "total", "revenue?"]
     np.testing.assert_array_equal(v1, v2)
+
+
+def test_query_embedder_factory():
+    # rec 5: factory supports fake (CPU) + colqwen (GPU, lazy load)
+    assert isinstance(create_query_embedder("fake"), FakeQueryEmbedder)
+    enc = create_query_embedder("colqwen")
+    assert hasattr(enc, "embed_query")
+    import pytest as _pt
+    with _pt.raises(ValueError):
+        create_query_embedder("nope")
 
 
 def test_two_stage_hit_rate(tmp_path):

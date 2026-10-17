@@ -32,8 +32,14 @@ CREATE TABLE IF NOT EXISTS pages(
 CREATE TABLE IF NOT EXISTS word_boxes(
   doc_id TEXT, page INTEGER, text TEXT,
   x0 INTEGER, y0 INTEGER, x1 INTEGER, y1 INTEGER,
-  block_id INTEGER, line_id INTEGER);
+  block_id INTEGER, line_id INTEGER, sent_id INTEGER DEFAULT -1);
 CREATE INDEX IF NOT EXISTS idx_wb_docpage ON word_boxes(doc_id, page);
+CREATE TABLE IF NOT EXISTS sentences(
+  doc_id TEXT, page INTEGER, sent_id INTEGER,
+  text TEXT, x0 INTEGER, y0 INTEGER, x1 INTEGER, y1 INTEGER,
+  block_id INTEGER DEFAULT 0,
+  PRIMARY KEY (doc_id, page, sent_id));
+CREATE INDEX IF NOT EXISTS idx_sent_docpage ON sentences(doc_id, page);
 """
 
 
@@ -42,7 +48,16 @@ def connect_sqlite(db_path: str | Path) -> sqlite3.Connection:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     con = sqlite3.connect(db_path)
     con.executescript(SCHEMA)
+    _migrate(con)
     return con
+
+
+def _migrate(con: sqlite3.Connection) -> None:
+    """Add columns/tables to indexes created by older versions (idempotent)."""
+    cols = {r[1] for r in con.execute("PRAGMA table_info(word_boxes)")}
+    if "sent_id" not in cols:
+        con.execute("ALTER TABLE word_boxes ADD COLUMN sent_id INTEGER DEFAULT -1")
+        con.commit()
 
 
 def upsert_page(con: sqlite3.Connection, meta: PageMeta) -> None:
@@ -61,8 +76,23 @@ def replace_word_boxes(con: sqlite3.Connection, boxes: list[WordBox]) -> None:
     for doc_id, page in keys:
         con.execute("DELETE FROM word_boxes WHERE doc_id=? AND page=?", (doc_id, page))
     con.executemany(
-        "INSERT INTO word_boxes VALUES (?,?,?,?,?,?,?,?,?)",
-        [(b.doc_id, b.page, b.text, *b.box, b.block_id, b.line_id) for b in boxes],
+        "INSERT INTO word_boxes VALUES (?,?,?,?,?,?,?,?,?,?)",
+        [(b.doc_id, b.page, b.text, *b.box, b.block_id, b.line_id, b.sent_id)
+         for b in boxes],
+    )
+    con.commit()
+
+
+def replace_sentences(con: sqlite3.Connection, sentences: list) -> None:
+    """Replace sentence units for the pages present in `sentences`."""
+    if not sentences:
+        return
+    keys = {(s.doc_id, s.page) for s in sentences}
+    for doc_id, page in keys:
+        con.execute("DELETE FROM sentences WHERE doc_id=? AND page=?", (doc_id, page))
+    con.executemany(
+        "INSERT INTO sentences VALUES (?,?,?,?,?,?,?,?,?)",
+        [(s.doc_id, s.page, s.sent_id, s.text, *s.box, s.block_id) for s in sentences],
     )
     con.commit()
 
@@ -73,6 +103,10 @@ def count_pages(con: sqlite3.Connection) -> int:
 
 def count_word_boxes(con: sqlite3.Connection) -> int:
     return con.execute("SELECT COUNT(*) FROM word_boxes").fetchone()[0]
+
+
+def count_sentences(con: sqlite3.Connection) -> int:
+    return con.execute("SELECT COUNT(*) FROM sentences").fetchone()[0]
 
 
 def indexed_pages(con: sqlite3.Connection) -> set[tuple[str, int]]:

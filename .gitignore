@@ -1,18 +1,13 @@
-# data / outputs (gitignored) — except the committed skeleton folders below
-data/*
-!data/raw/
-!data/raw_uploads/
-data/raw/*
-!data/raw/.gitkeep
-!data/raw/testimg.png
-data/raw_uploads/*
-!data/raw_uploads/.gitkeep
-results/runs/
-results/demo/
+# data / outputs (gitignored)
+data/
+results/
 *.npy
+index.zip
 
-# local docs / notes (gitignored)
-docs/
+# documents / reports (not pushed)
+*.pdf
+testRun*.md
+context.md
 
 # secrets
 .env
@@ -24,3 +19,4 @@ __pycache__/
 venv/
 *.egg-info/
 .pytest_cache/
+docs/

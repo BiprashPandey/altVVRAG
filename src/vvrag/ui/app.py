@@ -58,16 +58,19 @@ img.ev{max-width:100%;border:1px solid #ddd;border-radius:6px;margin-top:8px}
 <div><label>Reader</label><select id="reader_mode"><option value="mock">mock (canned, no key)</option><option value="live">live VLM (needs key)</option></select></div>
 <div><label>Samples</label><input type="number" id="n_samples" value="3" min="1" max="5"></div>
 <div><label>Grounding</label><select id="grounding"><option value="span">keyword span (honest)</option><option value="heatmap">heatmap demo (seeded C1)</option></select></div>
-<div><label>Gate</label><select id="gate"><option value="none">none</option><option value="fixed">fixed tau</option></select></div>
+<div><label>Gate</label><select id="gate"><option value="none">none</option><option value="fixed">fixed tau</option><option value="calibrated">calibrated (scorer+tau)</option><option value="conformal">conformal (tau file)</option></select></div>
 <div><label>Fixed tau</label><input type="number" id="fixed_tau" value="0.5" step="0.05" min="0" max="1"></div>
 </div>
 <button onclick="ask()">Ask</button> <span id="ask_msg" class="small"></span>
 <div id="result"></div></div>
 
-<p class="small">Demo-path disclosure: retrieval here is <b>keyword overlap</b> (the MaxSim query
-encoder runs on GPU only); span grounding is exact/fuzzy text matching; the heatmap toggle seeds the
-real C1 code from the keyword hit so you can see boxes/crops. Agreement + NLI + gates are the real code.
-Full pipeline numbers come from <code>python -m vvrag.eval.run_eval --all</code>.</p>
+<p class="small">Pipeline: retrieval is <b>keyword overlap</b> (never abstains; the MaxSim query
+encoder runs on GPU only) &rarr; the reader is shown <b>numbered sentences</b> and cites
+<code>sentence_ids</code> + a verbatim <code>quote</code> &rarr; a <b>deterministic quote check</b>
+(no model) + statement NLI verify the citation &rarr; the confidence gate decides; boxes are drawn on
+the <b>cited sentences only</b> (else "not found in this document", with closest passages).
+Gate "calibrated/conformal" uses <code>data/gate/scorer.pkl</code> + <code>tau.json</code> from
+<code>python scripts/calibrate_gate.py</code>. Full numbers: <code>python -m vvrag.eval.run_eval --all</code>.</p>
 
 <script>
 async function jget(u){const r=await fetch(u);return r.json()}
@@ -124,16 +127,68 @@ async function ask(){
   provider:document.getElementById('provider').value};
  try{const r=await jpost('/api/ask',b);
   document.getElementById('ask_msg').textContent=`done in ${r.timings.total}s`;
-  const cls=r.abstained?'bad':'ok';
-  document.getElementById('result').innerHTML=
-   `<h3>Answer <span class="badge ${cls}">${r.abstained?'ABSTAINED':'ANSWERED'}</span> <span class="badge ok">score ${r.score}</span></h3>`+
-   `<p><b>${r.answer}</b></p>`+
-   (r.reason?`<p class="small">${r.reason}</p>`:'')+
-   `<p class="small">page: ${(r.evidence||{}).doc_id||'-'} p${(r.evidence||{}).page??'-'} | crop text: ${((r.evidence||{}).crop_text||'').slice(0,300)}</p>`+
-   (r.evidence?`<img class="ev" src="${r.evidence.overlay_url}"><img class="ev" src="${r.evidence.crop_url}">`:'')+
-   `<pre>${JSON.stringify({claims:r.claims,features:r.features,retrieval:r.retrieval,api_calls:r.api_calls},null,1)}</pre>`}
- catch(e){document.getElementById('ask_msg').textContent='error: '+e.message}
+  render(r);
+ }catch(e){document.getElementById('ask_msg').textContent='error: '+e.message}
 }
+function render(r){
+ const ev=r.evidence||{};
+ const cls=r.abstained?'bad':'ok';
+ let html=`<h3>Answer <span class="badge ${cls}">${r.abstained?'NOT FOUND':'ANSWERED'}</span> <span class="badge ok">score ${r.score}</span></h3>`;
+ if(r.abstained){
+  html+=`<p class="badge warn">Not found in this document.</p>`;
+  if(r.abstain_reason)html+=`<p class="small">reason: ${r.abstain_reason}</p>`;
+  if((r.closest_passages||[]).length){
+   html+=`<p class="small"><b>Closest passages:</b></p><ul>`;
+   for(const p of r.closest_passages){html+=`<li>${esc(p.text).slice(0,240)} <span class="small">(score ${p.score})</span></li>`}
+   html+=`</ul>`;
+  }
+ } else {
+  html+=`<p><b>${esc(r.answer)}</b></p>`;
+ }
+ html+=`<p class="small">page: ${ev.doc_id||'-'} p${ev.page??'-'} | crop text: ${esc((ev.crop_text||'')).slice(0,300)}</p>`;
+ if(ev.overlay_url){
+  html+=`<div id="evwrap" style="position:relative;display:inline-block;max-width:100%">`
+   +`<img class="ev" id="evimg" src="${ev.overlay_url}"></div>`;
+  html+=`<img class="ev" src="${ev.crop_url}">`;
+ }
+ const cited=r.cited_sentences||[];
+ if(cited.length){
+  html+=`<p class="small"><b>Cited sentences</b> (click to highlight):</p><ul id="sentlist">`;
+  cited.forEach(function(s,i){
+   html+=`<li class="sitem" data-i="${i}" style="cursor:pointer">`
+    +`<span class="badge ok">S${s.sent_id}</span> ${esc(s.text)}</li>`;
+  });
+  html+=`</ul>`;
+ }
+ html+=`<pre>${esc(JSON.stringify({features:r.features,retrieval:r.retrieval,api_calls:r.api_calls},null,1))}</pre>`;
+ document.getElementById('result').innerHTML=html;
+ drawBoxes(cited, ev);
+ document.querySelectorAll('#sentlist .sitem').forEach(function(li){
+  li.onclick=function(){highlight(li.getAttribute('data-i'))};
+ });
+}
+function drawBoxes(cited, ev){
+ const wrap=document.getElementById('evwrap'); if(!wrap)return;
+ const img=document.getElementById('evimg');
+ const add=function(i){
+  const frac=(cited[i]&&cited[i].box_frac)||null; if(!frac)return;
+  const d=document.createElement('div'); d.className='sentbox'; d.dataset.i=i;
+  d.style.position='absolute'; d.style.border='2px solid #1a73e8'; d.style.boxSizing='border-box';
+  d.style.pointerEvents='none'; d.style.display='none';
+  d.style.left=(frac[0]*100)+'%'; d.style.top=(frac[1]*100)+'%';
+  d.style.width=((frac[2]-frac[0])*100)+'%'; d.style.height=((frac[3]-frac[1])*100)+'%';
+  wrap.appendChild(d);
+ };
+ cited.forEach(function(_,i){add(i)});
+ img.onload=function(){wrap.style.width=img.clientWidth+'px'};
+}
+function highlight(i){
+ document.querySelectorAll('.sentbox').forEach(function(b){b.style.display=b.dataset.i===i?'block':'none'});
+ document.querySelectorAll('#sentlist .sitem').forEach(function(li){
+  li.style.background=li.getAttribute('data-i')===i?'#fff3c4':'';
+ });
+}
+function esc(s){return (s==null?'':String(s)).replace(/[&<>]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c]})}
 refresh();
 </script></body></html>
 """

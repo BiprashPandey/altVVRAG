@@ -9,7 +9,8 @@ from __future__ import annotations
 from vvrag.schemas import Features
 
 FEATURE_ORDER = ["agreement", "entail_prob", "retrieval_margin",
-                 "heat_concentration", "n_claims", "crop_has_text"]
+                 "heat_concentration", "n_claims", "crop_has_text",
+                 "localize_score", "evidence_valid", "quote_match"]
 MISSING_ENTAIL_VALUE = 0.5
 
 
@@ -21,6 +22,9 @@ def build_features(
     heat_concentration: float = 0.0,
     n_claims: int = 0,
     crop_has_text: bool = True,
+    localize_score: float = 0.0,
+    evidence_valid: bool = False,
+    quote_match: float = 0.0,
 ) -> Features:
     entail = entail_min if entail_min is not None else MISSING_ENTAIL_VALUE
     return Features(
@@ -30,6 +34,9 @@ def build_features(
         heat_concentration=float(heat_concentration),
         n_claims=int(n_claims),
         crop_has_text=bool(crop_has_text),
+        localize_score=float(localize_score),
+        evidence_valid=bool(evidence_valid),
+        quote_match=float(quote_match),
     )
 
 
@@ -41,6 +48,9 @@ def to_vector(f: Features) -> list[float]:
         float(f.heat_concentration),
         float(f.n_claims),
         1.0 if f.crop_has_text else 0.0,
+        float(getattr(f, "localize_score", 0.0) or 0.0),
+        1.0 if getattr(f, "evidence_valid", False) else 0.0,
+        float(getattr(f, "quote_match", 0.0) or 0.0),
     ]
 
 

@@ -3,7 +3,7 @@ from vvrag.reader.claims import Claim
 from vvrag.schemas import ReaderSample
 from vvrag.verify.consistency import agreement
 from vvrag.verify.features import FEATURE_ORDER, build_features, to_vector
-from vvrag.verify.nli import FakeNLI, aggregate_entailment, label_order
+from vvrag.verify.nli import FakeNLI, aggregate_entailment, label_order, minimal_entailing_span
 from vvrag.verify.vlm_crop_check import check_claims, vlm_crop_supports
 
 
@@ -52,9 +52,25 @@ def test_features_missing_entail_encoding():
     f = build_features(agreement=1.0, entail_min=None, retrieval_margin=0.5,
                        heat_concentration=0.7, n_claims=2, crop_has_text=False)
     assert f.entail_prob == 0.5 and not f.crop_has_text
-    assert to_vector(f) == [1.0, 0.5, 0.5, 0.7, 2.0, 0.0]
+    assert to_vector(f) == [1.0, 0.5, 0.5, 0.7, 2.0, 0.0, 0.0, 0.0, 0.0]
     assert FEATURE_ORDER == ["agreement", "entail_prob", "retrieval_margin",
-                             "heat_concentration", "n_claims", "crop_has_text"]
+                             "heat_concentration", "n_claims", "crop_has_text",
+                             "localize_score", "evidence_valid", "quote_match"]
+    g = build_features(agreement=1.0, entail_min=0.9, heat_concentration=0.5,
+                       localize_score=1.0, evidence_valid=True, quote_match=0.9)
+    assert to_vector(g)[-3:] == [1.0, 1.0, 0.9]
+
+
+def test_minimal_entailing_span_shrinks():
+    # rec 3: two-stage narrow — last passing window is minimal support
+    def entail(window: str, claim: str) -> float:
+        return 1.0 if "derived from reports" in window else 0.0
+    sents = ["Header noise.", "Data derived from reports here.",
+             "Footer noise."]
+    shrunk = minimal_entailing_span("claim", sents, entail)
+    assert shrunk == ["Data derived from reports here."]
+    assert minimal_entailing_span("claim", ["nothing here"], entail) == []
+    assert minimal_entailing_span("", sents, entail) == []
 
 
 def test_vlm_check_disabled_and_mock():

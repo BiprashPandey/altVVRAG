@@ -73,6 +73,51 @@ def snap_box_to_words(
     return inside, union
 
 
+def answer_to_line_boxes(words: list[WordBox]) -> list[tuple[int, int, int, int]]:
+    """One tight box per visual line (rec 4: never one big multi-line union).
+
+    Merges neighbouring answer words on the same line; a multi-line answer
+    yields one box per line so unrelated side text is not covered.
+    """
+    if not words:
+        return []
+    from vvrag.ground.text_in_box import group_lines
+
+    boxes: list[tuple[int, int, int, int]] = []
+    for line in group_lines(words):
+        if line:
+            boxes.append((
+                min(w.box[0] for w in line),
+                min(w.box[1] for w in line),
+                max(w.box[2] for w in line),
+                max(w.box[3] for w in line),
+            ))
+    return boxes
+
+
+def snap_boxes_to_word_lines(
+    boxes: list[tuple[int, int, int, int]], words: list[WordBox]
+) -> tuple[list[WordBox], list[tuple[int, int, int, int]]]:
+    """Snap each candidate box to word centers, then split to per-line boxes.
+
+    Returns (unique_inside_words, per_line_boxes). Empty when nothing hits.
+    Heat-blob padding is stripped: output is exactly word-aligned.
+    """
+    from vvrag.ground.text_in_box import words_in_boxes
+
+    inside = words_in_boxes(words, boxes)
+    if not inside:
+        return [], []
+    # dedupe (a word center can fall in overlapping boxes)
+    seen, uniq = set(), []
+    for w in inside:
+        key = (w.text, w.box)
+        if key not in seen:
+            seen.add(key)
+            uniq.append(w)
+    return uniq, answer_to_line_boxes(uniq)
+
+
 def snap_box_to_lines(
     box: tuple[int, int, int, int], words: list[WordBox]
 ) -> tuple[int, int, int, int]:

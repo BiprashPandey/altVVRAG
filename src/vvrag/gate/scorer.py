@@ -15,9 +15,26 @@ from vvrag.verify.features import to_vector
 
 
 def hand_weighted(agreement: float, entail_prob: float | None,
-                  heat_concentration: float) -> float:
+                   heat_concentration: float,
+                   localize_score: float = 0.0,
+                   evidence_valid: bool = False,
+                   quote_match: float = 0.0) -> float:
+    """Hand-weighted confidence (rec 6: localization is a gate signal).
+
+    New kwargs default to 0/False so old 3-arg calls keep working; the
+    learned scorer picks up the new columns via FEATURE_ORDER automatically.
+    `quote_match` (suggestion #4) is a deterministic verifier signal, so it
+    carries real weight.
+    """
     entail = 0.5 if entail_prob is None else entail_prob
-    return float(0.4 * agreement + 0.4 * entail + 0.2 * heat_concentration)
+    base = float(0.25 * agreement + 0.25 * entail + 0.10 * heat_concentration
+                 + 0.20 * float(localize_score or 0.0)
+                 + 0.20 * float(quote_match or 0.0))
+    if evidence_valid:
+        base += 0.05
+    else:
+        base -= 0.05
+    return float(max(0.0, min(1.0, base)))
 
 
 class LogisticScorer:
