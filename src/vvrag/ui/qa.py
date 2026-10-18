@@ -318,12 +318,42 @@ def answer_question(question: str, index_dir: str, work_dir: str,
     # deterministic quote check (#4): quote must appear in cited sentences
     from vvrag.verify.quote_check import build_quote_retry_prompt, citation_texts, quote_match_score
 
-    answer = samples[0].answer
-    is_unanswerable = normalize_answer(answer) == "unanswerable"
-    cited_ids = list(samples[0].sentence_ids or [])
-    cited_texts, citations_valid = citation_texts(cited_ids, sentences)
-    qscore = quote_match_score(samples[0].quote, cited_texts) if cited_texts else 0.0
+    ocr_norm = bool(getattr(cfg.verify, "ocr_normalize", True))
+
+    def _derive(sample):
+        a = sample.answer
+        una = normalize_answer(a) == "unanswerable"
+        ids = list(sample.sentence_ids or [])
+        texts, valid = citation_texts(ids, sentences)
+        qs = (quote_match_score(sample.quote, texts, ocr_normalize=ocr_norm)
+              if texts else 0.0)
+        return a, una, ids, texts, valid, qs
+
+    (answer, is_unanswerable, cited_ids, cited_texts,
+     citations_valid, qscore) = _derive(samples[0])
     quote_ok = citations_valid and qscore >= quote_threshold
+    max_retries = int(getattr(cfg.reader, "max_answer_retries", 1))
+
+    # (#7) reduce false abstentions: reader said UNANSWERABLE but the page has
+    # close passages -> one corrective retry showing those passages verbatim.
+    if (is_unanswerable and reader_mode != "mock" and sentences
+            and bool(getattr(cfg.reader, "retry_on_unanswerable", True))
+            and max_retries > 0):
+        from vvrag.reader.prompts import build_passage_retry_prompt
+
+        cand = closest_passages(question, sentences, k=5)
+        top = cand[0]["score"] if cand else 0.0
+        if top >= float(getattr(cfg.reader, "unanswerable_retry_overlap", 0.2)):
+            retry_prompt = build_passage_retry_prompt(prompt, cand, question)
+            retry_samples, extra = run_reader_samples(reader, images, retry_prompt, 1, 0.0)
+            api_calls += extra
+            (r_answer, r_una, r_ids, r_texts,
+             r_valid, r_qscore) = _derive(retry_samples[0])
+            if not r_una and r_valid and r_qscore >= quote_threshold:
+                samples[0] = retry_samples[0]
+                answer, is_unanswerable = r_answer, r_una
+                cited_ids, cited_texts = r_ids, r_texts
+                citations_valid, qscore, quote_ok = r_valid, r_qscore, True
 
     if not is_unanswerable and not quote_ok and reader_mode != "mock" and sentences:
         # retry once with a corrective prompt (#4)
@@ -333,7 +363,8 @@ def answer_question(question: str, index_dir: str, work_dir: str,
         r_answer = retry_samples[0].answer
         r_ids = list(retry_samples[0].sentence_ids or [])
         r_texts, r_valid = citation_texts(r_ids, sentences)
-        r_qscore = quote_match_score(retry_samples[0].quote, r_texts) if r_texts else 0.0
+        r_qscore = (quote_match_score(retry_samples[0].quote, r_texts, ocr_normalize=ocr_norm)
+                    if r_texts else 0.0)
         if r_valid and r_qscore >= quote_threshold and normalize_answer(r_answer) != "unanswerable":
             samples[0] = retry_samples[0]
             answer = r_answer
@@ -381,17 +412,23 @@ def answer_question(question: str, index_dir: str, work_dir: str,
     evidence_valid = False
     if not is_unanswerable:
         if quote_ok and cited_texts:
+            from vvrag.ground.boxes import refine_box_to_quote
+
             by_id = {s.sent_id: s for s in sentences}
+            quote_text = samples[0].quote or ""
             for sid in dict.fromkeys(int(x) for x in cited_ids):
                 s = by_id.get(sid)
                 if s is None:
                     continue
+                # P4/E: tighten the cited-sentence box to the quote's words so a
+                # wide table row collapses to the cell/value the quote names.
+                box = refine_box_to_quote(words, quote_text, s.box)
                 cited_sentences.append({
                     "sent_id": s.sent_id, "text": s.text,
-                    "box": list(s.box), "box_frac": list(box_frac(s.box, W, H)),
+                    "box": list(box), "box_frac": list(box_frac(box, W, H)),
                 })
-                final_boxes.append(s.box)
-                final_frac.append(box_frac(s.box, W, H))
+                final_boxes.append(box)
+                final_frac.append(box_frac(box, W, H))
             evidence_valid = True
             loc_score = 1.0
             loc_source = "sentence_ids"

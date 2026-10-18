@@ -99,6 +99,48 @@ def max_over_golds(pred: str, golds: list[str], metric) -> float:
     return max(metric(pred, g) for g in golds)
 
 
+def equivalent_f1(pred: str, golds: list[str]) -> float:
+    """Max token-F1 of `pred` over acceptable golds (equivalent-answer scoring).
+
+    `golds` should include the primary gold. Empty -> 0.0.
+    """
+    if not golds:
+        return 0.0
+    return float(max(token_f1(pred, g) for g in golds))
+
+
+def _tokens(s: str) -> list[str]:
+    return normalize_answer(s).split()
+
+
+def equivalent_correct(
+    pred: str, golds: list[str], f1_threshold: float = 0.8,
+) -> bool:
+    """True when `pred` matches ANY acceptable gold (equivalent-answer scoring).
+
+    P3 fix: an answer is credited if (a) it equals a gold, (b) token-F1 with a
+    gold is >= threshold, or (c) it is a token-superset of a gold (a longer
+    answer that contains an acceptable gold, e.g. "important information or
+    citations" contains "important information").
+    """
+    if not golds:
+        return False
+    p = normalize_answer(pred)
+    for g in golds:
+        if p == normalize_answer(g):
+            return True
+    if equivalent_f1(pred, golds) >= f1_threshold:
+        return True
+    ptoks = _tokens(pred)
+    from collections import Counter
+    pc = Counter(ptoks)
+    for g in golds:
+        gtoks = _tokens(g)
+        if gtoks and all(pc[t] >= c for t, c in Counter(gtoks).items()):
+            return True
+    return False
+
+
 def sentence_precision_recall(
     pred_ids: list[int], gold_ids: list[int],
 ) -> tuple[float, float, float]:
@@ -146,6 +188,13 @@ def abstention_metrics(
             float((~answered[una]).mean()) if una.any() else 0.0)
         stats["false_answer_rate_on_unanswerable"] = (
             float(answered[una].mean()) if una.any() else 0.0)
+        # P3: abstention quality split (answerable vs unanswerable)
+        stats["false_abstention_rate"] = (
+            float((~answered[ans_mask]).mean()) if ans_mask.any() else 0.0)
+        n_abst = int((~answered).sum())
+        stats["abstention_precision"] = (
+            float((~answered[una]).sum() / n_abst) if n_abst else 0.0)
+        stats["abstention_recall"] = stats["unanswerable_abstention_rate"]
     return stats
 
 

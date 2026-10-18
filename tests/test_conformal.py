@@ -6,6 +6,7 @@ from vvrag.gate.conformal import (
     apply_gate,
     clopper_pearson_upper,
     select_tau,
+    select_tau_target_error,
     split_conformal_tau,
 )
 from vvrag.gate.fixed import apply_fixed
@@ -97,3 +98,21 @@ def test_scorers():
     p = os.path.join(tempfile.mkdtemp(), "scorer.pkl")
     sc.save(p)
     assert (LogisticScorer.load(p).predict_score(X) == s).all()
+
+
+def test_select_tau_target_error_picks_loosest_within_budget():
+    # P2/D: empirical coverage/accuracy tau selection on live-style labels
+    rng = np.random.default_rng(5)
+    good = rng.uniform(0.7, 1.0, 100)
+    bad = rng.uniform(0.0, 0.4, 40)
+    scores = np.concatenate([good, bad])
+    errors = np.array([0] * 100 + [1] * 40)
+    tau, info = select_tau_target_error(scores, errors, target_error=0.05)
+    assert np.isfinite(tau)
+    err, cov = accepted_error(scores, errors, tau)
+    assert err <= 0.05 + 1e-9
+    assert info["selected_cov"] == cov
+    # all-wrong -> no tau meets target -> +inf (always abstain)
+    tau2, _ = select_tau_target_error(np.array([0.1, 0.2, 0.3]), np.array([1, 1, 1]),
+                                      target_error=0.05)
+    assert tau2 == float("inf")

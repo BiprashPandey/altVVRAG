@@ -22,8 +22,12 @@ reader:
   max_claims: 5
   fallback_provider: ""                 # rec 9: e.g. "groq"; leave empty to disable
   fallback_model: ""                    # e.g. "llama-3.3-70b-versatile"
+  retry_on_unanswerable: true           # rec 7: one retry with closest passages on OCR noise
+  unanswerable_retry_overlap: 0.2       # min question/passage keyword overlap to bother retrying
+  max_answer_retries: 1
 verify:
   quote_threshold: 0.8                  # rec 4: fuzzy quote-match pass threshold (deterministic)
+  ocr_normalize: true                   # rec 7: tolerate OCR whitespace/case noise in quotes
 nli:
   model_id: "cross-encoder/nli-deberta-v3-base"
   device: "auto"   # auto = cuda when available, else cpu

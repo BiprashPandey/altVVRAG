@@ -21,7 +21,7 @@ from vvrag.eval.metrics import (
 def summarize(records: list[PredRecord], arm: str) -> dict:
     em = np.array([r.correct_em for r in records])
     f1s = np.array([r.correct_f1 for r in records])
-    correct = f1s >= 0.5
+    correct = (em >= 1.0) | (f1s >= 0.5)  # P3: equivalent-correct or high token-F1
     answered = np.array([not r.result.abstained for r in records])
     scores = np.array([r.result.score for r in records])
     sel = selective_stats(answered, correct)
@@ -50,6 +50,8 @@ def summarize(records: list[PredRecord], arm: str) -> dict:
         "answerable_coverage": abst.get("answerable_coverage", sel["coverage"]),
         "unanswerable_abstention_rate": abst.get("unanswerable_abstention_rate", 0.0),
         "false_answer_rate_on_unanswerable": abst.get("false_answer_rate_on_unanswerable", 0.0),
+        "false_abstention_rate": abst.get("false_abstention_rate", 0.0),
+        "abstention_precision": abst.get("abstention_precision", 0.0),
         "aurc": aurc(scores, (~correct).astype(int)) if len(records) else 0.0,
         "realized_accepted_error": float((~correct[answered]).mean()) if answered.any() else 0.0,
         "latency_mean_s": float(lat.mean()) if len(lat) else 0.0,
@@ -61,10 +63,10 @@ def summarize(records: list[PredRecord], arm: str) -> dict:
 
 def main_table_rows(summaries: list[dict]) -> tuple[str, str]:
     cols = ["arm", "n", "EM", "F1", "Hit@3", "IoU>=.3", "cover", "sel_acc",
-            "conf_wrong", "AURC", "ans_cover", "una_abst"]
+            "conf_wrong", "AURC", "ans_cover", "una_abst", "false_abs", "abst_prec"]
     md = ["| " + " | ".join(cols) + " |", "|" + "|".join(["---"] * len(cols)) + "|"]
-    tex = ["\\begin{tabular}{lccccccccccc}", "\\toprule",
-           "arm & n & EM & F1 & Hit@3 & IoU$\\geq$.3 & cover & sel.acc & conf.wr & AURC & ans.cover & una.abst \\\\", "\\midrule"]
+    tex = ["\\begin{tabular}{lccccccccccccc}", "\\toprule",
+           "arm & n & EM & F1 & Hit@3 & IoU$\\geq$.3 & cover & sel.acc & conf.wr & AURC & ans.cover & una.abst & false.abs & abst.prec \\\\", "\\midrule"]
     for s in summaries:
         em, f1 = s["answer_em"]["mean"], s["answer_f1"]["mean"]
         row = [s["arm"], str(s["n"]), f"{em:.3f}", f"{f1:.3f}",
@@ -72,7 +74,9 @@ def main_table_rows(summaries: list[dict]) -> tuple[str, str]:
                f"{s['coverage']:.3f}", f"{s['selective_accuracy']:.3f}",
                f"{s['confident_wrong_rate']:.3f}", f"{s['aurc']:.3f}",
                f"{s.get('answerable_coverage', 0.0):.3f}",
-               f"{s.get('unanswerable_abstention_rate', 0.0):.3f}"]
+               f"{s.get('unanswerable_abstention_rate', 0.0):.3f}",
+               f"{s.get('false_abstention_rate', 0.0):.3f}",
+               f"{s.get('abstention_precision', 0.0):.3f}"]
         md.append("| " + " | ".join(row) + " |")
         tex.append(" & ".join(row) + " \\\\")
     tex += ["\\bottomrule", "\\end{tabular}"]

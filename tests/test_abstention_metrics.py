@@ -27,6 +27,10 @@ def test_abstention_metrics_splits_populations():
     assert m["unanswerable_abstention_rate"] == 1.0  # abstained on the fake
     assert m["false_answer_rate_on_unanswerable"] == 0.0
     assert m["n_answerable"] == 3 and m["n_unanswerable"] == 1
+    # P3: abstention quality
+    assert m["false_abstention_rate"] == 1 / 3  # 1 of 3 answerable abstained
+    assert m["abstention_precision"] == 1 / 2   # 1 of 2 abstentions was unanswerable
+    assert m["abstention_recall"] == 1.0
 
 
 def test_abstention_metrics_without_mask():

@@ -5,6 +5,7 @@ import pymupdf
 from vvrag.ground.boxes import (
     answer_to_line_boxes,
     grid_to_boxes,
+    refine_box_to_quote,
     snap_box_to_lines,
     snap_box_to_words,
     snap_boxes_to_word_lines,
@@ -133,3 +134,24 @@ def test_crop_and_text_in_box(tmp_path):
     assert tmp_path.joinpath("ov.png").exists() and ov
     empty_text, empty_has = extract_crop_text([], [(0, 0, 5, 5)], None)
     assert (empty_text, empty_has) == ("", False)
+
+
+def test_refine_box_to_quote_tightens_table_cell():
+    # P4/E: a wide table-row box collapses to the single cell the quote names.
+    row = [WordBox("d", 0, t, (100 + i * 60, 100, 150 + i * 60, 120), 0, 0)
+           for i, t in enumerate("Revenue 42 bn Margin 17 pct".split())]
+    row_box = (100, 100, 100 + 4 * 60, 120)  # whole row
+    refined = refine_box_to_quote(row, "42 bn", row_box)
+    assert refined != row_box
+    assert refined[0] >= 100 and refined[2] <= row_box[2]  # inside the row
+    # tightened to just the value words (not the "Revenue"/"Margin" labels)
+    assert refined[0] > row_box[0] and refined[2] < row_box[2]
+
+
+def test_refine_box_to_quote_falls_back_when_no_match():
+    row = [WordBox("d", 0, "Alpha", (0, 0, 50, 20), 0, 0),
+           WordBox("d", 0, "Beta", (60, 0, 110, 20), 0, 0)]
+    box = (0, 0, 110, 20)
+    assert refine_box_to_quote(row, "totally absent quote", box) == box
+    assert refine_box_to_quote(row, "", box) == box
+    assert refine_box_to_quote([], "Alpha", box) == box

@@ -95,6 +95,39 @@ def answer_to_line_boxes(words: list[WordBox]) -> list[tuple[int, int, int, int]
     return boxes
 
 
+def refine_box_to_quote(
+    words: list[WordBox],
+    quote: str,
+    region_box: tuple[int, int, int, int],
+    fuzzy_threshold: float = 0.8,
+) -> tuple[int, int, int, int]:
+    """Tighten a region box to the words that actually match `quote` (P4/E).
+
+    Filters `words` to those inside `region_box`, finds the best matching run
+    (reuses derive_answer_words), and returns its tight union box — so a wide
+    table-row sentence collapses to the single cell/value the quote names.
+    Falls back to `region_box` when nothing matches (quote spans OCR the word
+    finder can't align), so the caller never gets a worse box.
+    """
+    if not quote or not region_box:
+        return region_box
+    from vvrag.eval.gold_regions import derive_answer_words
+    from vvrag.ground.text_in_box import words_in_boxes
+
+    inside = words_in_boxes(words, [region_box])
+    if not inside:
+        return region_box
+    span, _score = derive_answer_words(quote, inside, fuzzy_threshold)
+    if not span:
+        return region_box
+    return (
+        min(w.box[0] for w in span),
+        min(w.box[1] for w in span),
+        max(w.box[2] for w in span),
+        max(w.box[3] for w in span),
+    )
+
+
 def snap_boxes_to_word_lines(
     boxes: list[tuple[int, int, int, int]], words: list[WordBox]
 ) -> tuple[list[WordBox], list[tuple[int, int, int, int]]]:

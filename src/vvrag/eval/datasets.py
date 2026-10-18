@@ -23,6 +23,16 @@ class QAItem:
     gold_page: int
     gold_patch_idx: tuple[int, ...] = ()  # flat patch indices tied to answer location
     is_unanswerable: bool = False  # suggestion #8: gold says answer is absent
+    acceptable_answers: list[str] = field(default_factory=list)  # P3: equivalent golds
+
+    def golds(self) -> list[str]:
+        """All acceptable gold strings (primary first, de-duplicated)."""
+        out, seen = [], set()
+        for a in [self.gold_answer, *self.acceptable_answers]:
+            if a and a not in seen:
+                seen.add(a)
+                out.append(a)
+        return out
 
 
 @dataclass
@@ -118,34 +128,72 @@ def build_synthetic_set(out_dir: str | Path, n_docs: int = 10, pages_per_doc: in
     return EvalSet(items=items)
 
 
-def load_slidevqa(index_dir: str = "data/index", split: str = "debug",
-                  n_debug: int = 45, seed: int = 42) -> EvalSet:
-    """Primary dataset loader. Tries HF mirror, else raises with instructions.
+def _slidevqa_item(row, i: int) -> QAItem:
+    """Map one SlideVQA row -> QAItem (P3: equivalent golds, 0-indexed page)."""
+    q = str(row.get("question", "")).strip()
+    ans_raw = row.get("answer", [])
+    variants = [str(a).strip() for a in (ans_raw if isinstance(ans_raw, list) else [ans_raw])
+                if str(a).strip()]
+    ev = row.get("evidence_pages")
+    if ev is None and isinstance(row.get("evidence"), dict):
+        ev = row["evidence"].get("pages")
+    ev = ev or [1]
+    ev_pages = [int(p) for p in ev] if isinstance(ev, (list, tuple)) else [int(ev)]
+    gold_page = max(0, (ev_pages[0] if ev_pages else 1) - 1)  # 1-indexed -> 0-indexed
+    deck = str(row.get("deck_name")
+               or (row.get("document", {}) or {}).get("id") or f"d{i}")
+    is_unans = (not variants) or any(
+        v.lower() in ("unanswerable", "not answerable", "n/a") for v in variants)
+    return QAItem(
+        question_id=f"{deck}-{row.get('qa_id', i)}", deck_id=deck, question=q,
+        gold_answer=variants[0] if variants else "UNANSWERABLE",
+        gold_doc=deck, gold_page=gold_page,
+        acceptable_answers=variants[1:], is_unanswerable=is_unans)
 
-    Set VVRAG_DATASET=slidevqa and place files per scripts/download_data.sh.
-    Falls back to build_synthetic_set() when unavailable (documented in runs).
+
+def load_slidevqa(index_dir: str = "data/slidevqa/index", split: str = "test",
+                  n_debug: int = 45, seed: int = 42, streaming: bool = True,
+                  max_scan: int = 200) -> EvalSet:
+    """SlideVQA loader (P3/C): real rows -> QAItems with equivalent golds.
+
+    Tries the official gated repo first, then public mirrors. Each row is one
+    deck (`deck_name`) with up to 20 slide images (`page_1..page_20`), a
+    `question`, an `answer` LIST of acceptable variants, and 1-indexed
+    `evidence_pages`. We map to 0-indexed gold_page and keep every answer
+    variant as an acceptable gold (P3: multiple equivalent answers).
+
+    Only the first `max_scan` rows are scanned (each row decodes 20 images,
+    so full-iteration streaming is expensive); `seed` picks a sparse stride
+    for deck diversity.
     """
     from datasets import load_dataset  # type: ignore
 
-    for cand in ("lmms-lab/SlideVQA", "SlideVQA/SlideVQA"):
+    repos = ("NTT-hil-insight/SlideVQA", "Ahren09/SlideVQA", "AHS-uni/slidevqa-qa")
+    ds = None
+    last_err = None
+    for cand in repos:
         try:
-            ds = load_dataset(cand, split="test")
+            ds = load_dataset(cand, split=split, streaming=streaming)
             break
-        except Exception:
-            continue
-    else:
+        except Exception as e:  # noqa: BLE001
+            last_err = e
+    if ds is None:
         raise RuntimeError(
-            "SlideVQA unavailable on the Hub tried {lmms-lab/SlideVQA, SlideVQA/SlideVQA}. "
-            "Run scripts/download_data.sh or use build_synthetic_set() fallback.")
-    rng = np.random.default_rng(seed)
-    idx = rng.choice(len(ds), size=min(n_debug, len(ds)), replace=False)
-    items = []
-    for i in idx:
-        row = ds[int(i)]
-        items.append(QAItem(question_id=str(row.get("question_id", i)),
-                            deck_id=str(row.get("deck_id", row.get("deck", "d0"))),
-                            question=str(row["question"]),
-                            gold_answer=str(row["answer"]),
-                            gold_doc=str(row.get("doc_id", "")),
-                            gold_page=int(row.get("page", 0))))
+            "SlideVQA unavailable on the Hub (tried "
+            f"{', '.join(repos)}). Run scripts/prepare_slidevqa.py or fall back "
+            "to build_synthetic_set(). Last error: %s" % last_err)
+
+    stride = max(1, max_scan // max(1, n_debug))
+    items: list[QAItem] = []
+    for i, row in enumerate(ds):
+        if i >= max_scan:
+            break
+        if i % stride != 0:
+            continue
+        item = _slidevqa_item(row, i)
+        if not item.question:
+            continue
+        items.append(item)
+        if len(items) >= n_debug:
+            break
     return EvalSet(items=items, index_dir=index_dir)

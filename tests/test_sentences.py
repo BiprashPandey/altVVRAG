@@ -1,5 +1,5 @@
 """Sentence segmentation tests (suggestion #1: cite sentences, not words)."""
-from vvrag.ingest.sentences import box_frac, build_sentences
+from vvrag.ingest.sentences import box_frac, build_sentences, sentence_ids_for_answer
 from vvrag.schemas import WordBox
 
 
@@ -67,3 +67,12 @@ def test_box_frac():
     frac = box_frac((100, 50, 300, 250), 1000, 500)
     assert frac == (0.1, 0.1, 0.3, 0.5)
     assert box_frac((-10, -10, 2000, 2000), 100, 100) == (0.0, 0.0, 1.0, 1.0)
+
+
+def test_sentence_ids_for_answer_exact_and_fuzzy():
+    sents, _ = build_sentences(_line(["Row", "1,", "Col", "3", "then", "more."]))
+    # exact substring
+    assert sentence_ids_for_answer("Row 1 Col 3", sents) == [0]
+    # fuzzy: OCR typo variant still resolves (P3 gold sids not left empty)
+    assert sentence_ids_for_answer("Row 1 Col3", sents) == [0]
+    assert sentence_ids_for_answer("absent phrase entirely", sents) == []

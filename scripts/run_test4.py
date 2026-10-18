@@ -31,8 +31,7 @@ from vvrag.eval.metrics import exact_match, f1, center_inside  # noqa: E402
 from vvrag.eval.metrics import per_line_iou, sentence_precision_recall, union_iou, word_precision_recall_f1  # noqa: E402
 from vvrag.ground.crop import overlay_heatmap  # noqa: E402
 from vvrag.ground.text_in_box import words_in_boxes  # noqa: E402
-from vvrag.ingest.sentences import sentences_from_page  # noqa: E402
-from vvrag.reader.claims import normalize_answer  # noqa: E402
+from vvrag.ingest.sentences import sentence_ids_for_answer, sentences_from_page  # noqa: E402
 from vvrag.schemas import WordBox  # noqa: E402
 from vvrag.ui.qa import answer_question, page_words  # noqa: E402
 
@@ -165,8 +164,7 @@ def gold_context(con, item, doc_id):
     gbox = derive_gold_box(item['answer'], words)
     gwords, gscore = derive_answer_words(item['answer'], words)
     sents, _ = sentences_from_page(con, doc_id, 0)
-    target = normalize_answer(item['answer'])
-    gsent_ids = [s.sent_id for s in sents if target and target in normalize_answer(s.text)]
+    gsent_ids = sentence_ids_for_answer(item['answer'], sents)
     grow = {'qid': item['qid'], 'version': None, 'doc_id': doc_id,
             'question': item['question'], 'gold_answer': item['answer'],
             'gold_box': list(gbox) if gbox else None,

@@ -144,6 +144,8 @@ function render(r){
   }
  } else {
   html+=`<p><b>${esc(r.answer)}</b></p>`;
+  const quote=(r.samples&&r.samples[0]&&r.samples[0].quote)||'';
+  if(quote)html+=`<p class="small"><b>quote:</b> \u201c${esc(quote)}\u201d</p>`;
  }
  html+=`<p class="small">page: ${ev.doc_id||'-'} p${ev.page??'-'} | crop text: ${esc((ev.crop_text||'')).slice(0,300)}</p>`;
  if(ev.overlay_url){
@@ -171,8 +173,9 @@ function drawBoxes(cited, ev){
  const wrap=document.getElementById('evwrap'); if(!wrap)return;
  const img=document.getElementById('evimg');
  const add=function(i){
-  const frac=(cited[i]&&cited[i].box_frac)||null; if(!frac)return;
+  const s=cited[i]||{}; const frac=s.box_frac||null; if(!frac)return;
   const d=document.createElement('div'); d.className='sentbox'; d.dataset.i=i;
+  d.title='S'+s.sent_id+': '+(s.text||'');  // tooltip: which sentence this box is
   d.style.position='absolute'; d.style.border='2px solid #1a73e8'; d.style.boxSizing='border-box';
   d.style.pointerEvents='none'; d.style.display='none';
   d.style.left=(frac[0]*100)+'%'; d.style.top=(frac[1]*100)+'%';

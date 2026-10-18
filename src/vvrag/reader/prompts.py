@@ -18,7 +18,11 @@ Also give the exact "quote" (verbatim words that support the answer) and the "se
 numbered sentences that contain that quote (usually one, several allowed).
 Return STRICT JSON only, no code fences, no commentary, matching this schema:
 {"answer": "<short final answer>", "quote": "<verbatim supporting words>", "sentence_ids": [12], "claims": [{"text": "<one atomic fact>", "answer_span": "<exact supporting words or null>"}]}
-Atomic means: one fact per claim, no pronouns without referents."""
+Atomic means: one fact per claim, no pronouns without referents.
+The page may be a slide with OCR errors, spacing quirks (e.g. "Col 3" vs "Col3"),
+or ALL-CAPS headings. Answer the INTENDED meaning and match the closest visible
+text; do not abstain just because of minor OCR noise. Only say UNANSWERABLE when
+the page genuinely lacks the information."""
 
 
 def build_prompt(question: str, crop_text: str | None = None, max_claims: int = 5) -> str:
@@ -72,3 +76,36 @@ def build_grounded_prompt(question, crop_text=None, numbered_words=None, max_cla
     items expose `.sent_id`/`.text` (then treated as sentences)."""
     sents = [w for w in (numbered_words or []) if hasattr(w, "sent_id")]
     return build_sentence_prompt(question, sents, crop_text, max_claims)
+
+
+def build_passage_retry_prompt(
+    original_prompt: str,
+    passages: list,  # list of (sent_id, text, score) or (text, score) tuples
+    question: str,
+) -> str:
+    """Corrective prompt after an UNANSWERABLE verdict (suggestion #7).
+
+    Shows the closest passages on the page verbatim and asks the reader to
+    re-examine the image / sentences, tolerating OCR noise, before abstaining.
+    """
+    lines: list[str] = []
+    for p in passages[:5]:
+        if isinstance(p, dict):
+            sid, text = p.get("sent_id"), p.get("text", "")
+        elif len(p) == 3:
+            sid, text = p[0], p[1]
+        else:
+            sid, text = None, p[0]
+        tag = f"[S{sid}] " if sid is not None else ""
+        if text:
+            lines.append(f"{tag}{text}")
+    block = "\n".join(lines)[:3000]
+    correction = (
+        f"You answered UNANSWERABLE, but these passages from the page look related to "
+        f"the question {question!r}:\n{block}\n\n"
+        "Re-examine the page image and the numbered sentences. If the INTENDED answer "
+        "is visible (ignoring minor OCR noise such as extra/missing spaces or casing), "
+        'return it with a verbatim "quote" and the "sentence_ids" containing it. '
+        'Only keep "answer": "UNANSWERABLE" if the page truly lacks the information.'
+    )
+    return original_prompt + "\n\n" + correction

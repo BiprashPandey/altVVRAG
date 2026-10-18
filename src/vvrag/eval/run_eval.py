@@ -92,7 +92,15 @@ def main() -> None:
                                     seed=cfg.eval.seed)
     log.info("split by deck: train=%d calib=%d test=%d", len(train), len(calib), len(test))
     if args.dataset == "slidevqa":
-        log.warning("slidevqa needs GPU index + reader key; running synthetic instead (documented)")
+        # Real SlideVQA needs its OWN index (OCR + ColQwen, GPU) built from the
+        # materialized decks -- see scripts/prepare_slidevqa.py. The offline
+        # SimulatedReader harness below runs on a synthetic index, so we do not
+        # silently mix real items with it; raise a clear pointer instead.
+        raise SystemExit(
+            "--dataset slidevqa is served by the live pipeline, not this offline "
+            "harness. Run: python scripts/prepare_slidevqa.py  (materialize decks), "
+            "then index with run_ingest --embedder colqwen, then "
+            "python scripts/run_test5.py. Use --dataset synthetic for the offline matrix.")
 
     summaries, records_by_arm = [], {}
     cfgs = [c for c in arm_configs(args) if c.name in args.arms]

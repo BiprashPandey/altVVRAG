@@ -12,16 +12,35 @@ Used two ways:
 """
 from __future__ import annotations
 
+import re
+
 from vvrag.reader.claims import normalize_answer, token_f1
 
 DEFAULT_QUOTE_THRESHOLD = 0.8
 
+_ALNUM = re.compile(r"(?<=[a-z])(?=\d)|(?<=\d)(?=[a-z])")
 
-def quote_match_score(quote: str, cited_texts: list[str]) -> float:
+
+def _normalize_ocr(text: str) -> str:
+    """OCR-tolerant normalization: drop spaces (col 3 == col3 == c o l 3 -> col3).
+
+    Used only for quote verification so a reader quote with different spacing
+    than the OCR'd sentence still matches verbatim words. Deterministic, no model.
+    """
+    return _ALNUM.sub("", normalize_answer(text).replace(" ", ""))
+
+
+def quote_match_score(quote: str, cited_texts: list[str],
+                      ocr_normalize: bool = False) -> float:
     """Best support score in [0, 1] of `quote` within the cited sentence texts."""
     q = normalize_answer(quote or "")
     if not q or not cited_texts:
         return 0.0
+    if ocr_normalize:
+        qo = _normalize_ocr(quote)
+        if qo:
+            if any(qo in _normalize_ocr(t) for t in cited_texts):
+                return 1.0
     joined = normalize_answer(" ".join(cited_texts))
     if q in joined:
         return 1.0
@@ -39,8 +58,9 @@ def quote_match_score(quote: str, cited_texts: list[str]) -> float:
 def quote_matches(
     quote: str, cited_texts: list[str],
     threshold: float = DEFAULT_QUOTE_THRESHOLD,
+    ocr_normalize: bool = False,
 ) -> bool:
-    return quote_match_score(quote, cited_texts) >= threshold
+    return quote_match_score(quote, cited_texts, ocr_normalize=ocr_normalize) >= threshold
 
 
 def citation_texts(

@@ -40,17 +40,26 @@ def build_features(
     )
 
 
-def to_vector(f: Features) -> list[float]:
+def to_vector(f) -> list[float]:
+    """Feature row in FEATURE_ORDER order. Accepts a Features object OR a dict
+    (e.g. loaded from a live_labels.jsonl produced by feats.to_dict())."""
+
+    def g(key, default=None):
+        if isinstance(f, dict):
+            return f.get(key, default)
+        return getattr(f, key, default)
+
     return [
-        float(f.agreement),
-        float(f.entail_prob if f.entail_prob is not None else MISSING_ENTAIL_VALUE),
-        float(f.retrieval_margin),
-        float(f.heat_concentration),
-        float(f.n_claims),
-        1.0 if f.crop_has_text else 0.0,
-        float(getattr(f, "localize_score", 0.0) or 0.0),
-        1.0 if getattr(f, "evidence_valid", False) else 0.0,
-        float(getattr(f, "quote_match", 0.0) or 0.0),
+        float(g("agreement", 0.0)),
+        float(g("entail_prob", MISSING_ENTAIL_VALUE)
+              if g("entail_prob", None) is not None else MISSING_ENTAIL_VALUE),
+        float(g("retrieval_margin", 0.0)),
+        float(g("heat_concentration", 0.0)),
+        float(g("n_claims", 0)),
+        1.0 if g("crop_has_text", True) else 0.0,
+        float(g("localize_score", 0.0) or 0.0),
+        1.0 if g("evidence_valid", False) else 0.0,
+        float(g("quote_match", 0.0) or 0.0),
     ]
 
 

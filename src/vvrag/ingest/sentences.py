@@ -170,6 +170,39 @@ def sentences_from_page(
     return sents, words
 
 
+def sentence_ids_for_answer(
+    answer: str,
+    sentences: list[SentenceSpan],
+    fuzzy_threshold: float = 0.8,
+) -> list[int]:
+    """Sentence ids whose text contains the answer (P3: fuzzy gold sids).
+
+    Exact normalized substring first; otherwise token-F1 >= threshold (after
+    splitting alpha/digit runs so "Col3" ~ "Col 3"), which tolerates OCR typos
+    instead of leaving gold sentence ids empty.
+    """
+    import re as _re
+    from vvrag.reader.claims import normalize_answer, token_f1
+
+    def _alnum(s: str) -> str:
+        return _re.sub(r"(?<=[a-z])(?=\d)|(?<=\d)(?=[a-z])", " ", s)
+
+    target = _alnum(normalize_answer(answer))
+    if not target:
+        return []
+    ids: list[int] = []
+    for s in sentences:
+        nt = _alnum(normalize_answer(s.text))
+        if not nt:
+            continue
+        if target in nt or target.split() and all(
+                nt.split().count(t) >= target.split().count(t) for t in set(target.split())):
+            ids.append(s.sent_id)
+        elif token_f1(target, nt) >= fuzzy_threshold:
+            ids.append(s.sent_id)
+    return ids
+
+
 def box_frac(
     box: tuple[int, int, int, int], page_width: int, page_height: int,
 ) -> tuple[float, float, float, float]:

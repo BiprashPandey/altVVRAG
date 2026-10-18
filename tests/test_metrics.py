@@ -6,6 +6,8 @@ from vvrag.eval.metrics import (
     aurc,
     bootstrap_ci,
     center_inside,
+    equivalent_correct,
+    equivalent_f1,
     exact_match,
     f1,
     hit_at_k,
@@ -95,3 +97,14 @@ def test_multi_gold_max():
                           ["Nepal Rastra Bank",
                            "Nepal Rastra Bank reserves all rights"], f1) == 1.0
     assert max_over_golds("x", [], f1) == 0.0
+
+
+def test_equivalent_answers():
+    golds = ["important information", "citations"]
+    # longer reader answer contains an acceptable gold -> correct
+    assert equivalent_correct("important information or citations", golds) is True
+    # equivalent_f1 is the raw max token-F1 (still penalised for extra words)
+    assert abs(equivalent_f1("important information or citations", golds) - 2 / 3) < 1e-6
+    assert equivalent_correct("completely unrelated", golds) is False
+    assert equivalent_correct("anything", []) is False
+    assert equivalent_f1("anything", []) == 0.0

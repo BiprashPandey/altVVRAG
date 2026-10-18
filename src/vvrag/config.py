@@ -42,11 +42,17 @@ class ReaderConfig:
     max_claims: int = 5
     fallback_provider: str = ""
     fallback_model: str = ""
+    # suggestion #7: reduce false abstentions on noisy OCR
+    retry_on_unanswerable: bool = True
+    unanswerable_retry_overlap: float = 0.2
+    max_answer_retries: int = 1
 
 
 @dataclass
 class VerifyConfig:
     quote_threshold: float = 0.8
+    # suggestion #7: tolerant quote check that ignores OCR whitespace/case noise
+    ocr_normalize: bool = True
 
 
 @dataclass

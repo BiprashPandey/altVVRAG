@@ -16,7 +16,7 @@ import numpy as np
 
 from vvrag.eval.datasets import QAItem
 from vvrag.eval.gold_regions import derive_answer_words, derive_gold_box
-from vvrag.eval.metrics import center_inside, exact_match, f1, hit_at_k, iou, mrr, union_iou
+from vvrag.eval.metrics import center_inside, equivalent_correct, equivalent_f1, f1, hit_at_k, iou, mrr, union_iou
 from vvrag.gate.conformal import apply_gate as conformal_apply
 from vvrag.gate.conformal import select_tau
 from vvrag.gate.fixed import apply_fixed
@@ -246,7 +246,9 @@ class OfflineSystem:
                      score=score, tau=self.tau if self.cfg.gate == "conformal" else self.cfg.fixed_tau,
                      evidence=evidence, samples=samples, features=feats,
                      timings={"total": time.time() - t0}, api_calls=self.cfg.n_samples)
-        cf1, cem = f1(res.answer, item.gold_answer), exact_match(res.answer, item.gold_answer)
+        golds = item.golds()
+        cf1 = equivalent_f1(res.answer, golds)
+        cem = 1.0 if equivalent_correct(res.answer, golds) else 0.0
         (_, gold_words) = self.page_data(item.gold_doc, item.gold_page)
         gold_box = derive_gold_box(item.gold_answer, gold_words)
         iou_v = union_iou(evidence.boxes, gold_box) if evidence.boxes and gold_box else None

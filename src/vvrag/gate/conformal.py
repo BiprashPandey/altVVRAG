@@ -112,3 +112,42 @@ def accepted_error(scores: np.ndarray, errors: np.ndarray, tau: float) -> tuple[
     if not accepted.any():
         return 0.0, cov
     return float(np.asarray(errors)[accepted].mean()), cov
+
+
+def select_tau_target_error(
+    scores: np.ndarray,
+    errors: np.ndarray,
+    target_error: float = 0.10,
+    grid: np.ndarray | None = DEFAULT_GRID,
+    min_n: int = 5,
+) -> tuple[float, dict]:
+    """Pick the loosest tau whose empirical accepted-error <= target_error (P2/D).
+
+    Coverage/accuracy-curve selection on LIVE labels: walk tau from loose to
+    strict, keep the one accepting the most questions while empirical error
+    among accepted stays <= target_error. If no grid point meets it, tau=+inf.
+    """
+    scores = np.asarray(scores, dtype=float)
+    errors = np.asarray(errors, dtype=int)
+    if scores.shape != errors.shape or scores.size == 0:
+        raise ValueError("scores/errors must be non-empty and same shape")
+    cands = sorted(set(float(g) for g in (grid if grid is not None else scores.tolist())))
+    info: dict = {"candidates": [], "n_calib": int(scores.size), "target_error": target_error}
+    best_tau, best_cov = math.inf, -1.0
+    for tau in cands:  # ascending: loose -> strict
+        accepted = scores >= tau
+        n_acc = int(accepted.sum())
+        if n_acc < min_n:
+            info["candidates"].append({"tau": tau, "n_acc": n_acc, "emp_err": None,
+                                       "cov": n_acc / scores.size, "skipped": True})
+            continue
+        k_err = int(errors[accepted].sum())
+        emp_err = k_err / n_acc
+        cov = n_acc / scores.size
+        info["candidates"].append({"tau": tau, "n_acc": n_acc, "emp_err": emp_err,
+                                   "cov": cov})
+        if emp_err <= target_error and cov > best_cov:
+            best_tau, best_cov = float(tau), cov
+    info["tau_star"] = best_tau
+    info["selected_cov"] = best_cov if best_cov >= 0 else 0.0
+    return best_tau, info
