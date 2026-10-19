@@ -60,6 +60,21 @@ def test_bootstrap_ci_covers_mean():
     assert lo <= m <= hi and m == 0.75
 
 
+def test_clopper_pearson_interval():
+    from vvrag.eval.metrics import clopper_pearson_interval
+
+    lo, hi = clopper_pearson_interval(9, 9)
+    assert lo > 0.6 and hi == 1.0          # 9/9 -> lower bound < 1
+    lo, hi = clopper_pearson_interval(0, 9)
+    assert lo == 0.0 and hi < 0.4          # 0/9 -> upper bound well below 1
+    lo, hi = clopper_pearson_interval(5, 10)
+    assert 0.15 < lo < 0.5 < hi < 0.85
+    # narrower than 0/9 at n=100
+    _lo, hi100 = clopper_pearson_interval(0, 100)
+    assert hi100 < 0.05
+    assert clopper_pearson_interval(0, 0) == (0.0, 0.0)
+
+
 def test_gold_box_exact_and_fuzzy():
     words = [WordBox("d", 0, t, (i * 50, 0, i * 50 + 40, 20), 0, 0)
              for i, t in enumerate("The Aurora revenue was 42 million today".split())]
@@ -108,3 +123,15 @@ def test_equivalent_answers():
     assert equivalent_correct("completely unrelated", golds) is False
     assert equivalent_correct("anything", []) is False
     assert equivalent_f1("anything", []) == 0.0
+
+
+def test_equivalent_correct_norm_units():
+    from vvrag.eval.metrics import equivalent_correct_norm, equivalent_f1_norm
+
+    # Phase 6: unit variants normalize before matching
+    assert equivalent_correct_norm("12.5 bn", ["12.5 billion"]) is True
+    assert equivalent_correct_norm("53%", ["53 percent"]) is True
+    assert equivalent_correct_norm("1,234", ["1234"]) is True
+    assert equivalent_correct_norm("12.5 bn", ["12.5 million"]) is False
+    assert equivalent_f1_norm("47%", ["47 percent"]) == 1.0
+    assert equivalent_f1_norm("x", []) == 0.0

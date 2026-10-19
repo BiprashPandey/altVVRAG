@@ -83,11 +83,24 @@ def _fit_from_jsonl(args) -> None:
         tau, info = select_tau(scores, y_ca_err, args.alpha, args.delta, min_n=args.min_n)
         log.info("conformal tau=%.4f (alpha=%.2f delta=%.2f)", tau, args.alpha, args.delta)
 
+    # Run 8 Phase D: report the accepted-error with an exact (Clopper-Pearson)
+    # small-n interval so the report can quote honest uncertainty.
+    from vvrag.eval.metrics import clopper_pearson_interval
+
+    acc_mask = scores >= tau
+    acc_k = int(np.sum(y_ca_err[acc_mask])) if acc_mask.any() else 0
+    acc_n = int(acc_mask.sum())
+    cp_lo, cp_hi = clopper_pearson_interval(acc_k, acc_n) if acc_n else (0.0, 1.0)
+
     (out_dir / "tau.json").write_text(json.dumps({
         "tau": float(tau) if tau != float("inf") else 1.0,
         "alpha": args.alpha, "delta": args.delta,
         "target_error": args.target_error,
         "n_calib": len(ca), "n_train": len(tr), "n_source": "live-jsonl",
+        "n_pos": int(np.sum(y_tr == 1)), "n_neg": int(np.sum(y_tr == 0)),
+        "accepted_n": acc_n, "accepted_err": acc_k,
+        "accepted_err_rate": round(acc_k / acc_n, 4) if acc_n else None,
+        "accepted_err_cp95": [round(cp_lo, 4), round(cp_hi, 4)],
         "scorer": args.scorer, "feature_order": list(FEATURE_ORDER),
     }, indent=2), encoding="utf-8")
     log.info("wrote %s", out_dir / "tau.json")

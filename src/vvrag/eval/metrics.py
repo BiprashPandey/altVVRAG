@@ -141,6 +141,33 @@ def equivalent_correct(
     return False
 
 
+def equivalent_f1_norm(pred: str, golds: list[str]) -> float:
+    """Number-normalized max token-F1 over acceptable golds (Phase 6).
+
+    "12.5 bn" -> "12.5 billion" so unit variants score as equivalent.
+    """
+    from vvrag.verify.support import normalize_numbers
+
+    if not golds:
+        return 0.0
+    return float(max(token_f1(normalize_numbers(pred), normalize_numbers(g))
+                     for g in golds))
+
+
+def equivalent_correct_norm(
+    pred: str, golds: list[str], f1_threshold: float = 0.8,
+) -> bool:
+    """`equivalent_correct` after number/unit normalization (Phase 6)."""
+    from vvrag.verify.support import normalize_numbers
+
+    if not golds:
+        return False
+    return equivalent_correct(
+        normalize_numbers(pred),
+        [normalize_numbers(g) for g in golds],
+        f1_threshold=f1_threshold)
+
+
 def sentence_precision_recall(
     pred_ids: list[int], gold_ids: list[int],
 ) -> tuple[float, float, float]:
@@ -250,3 +277,20 @@ def bootstrap_ci(values: np.ndarray, stat=np.mean, n_resamples: int = 1000,
     boots = [stat(values[rng.integers(0, n, n)]) for _ in range(n_resamples)]
     lo_q, hi_q = (1 - ci) / 2 * 100, (1 + ci) / 2 * 100
     return float(stat(values)), float(np.percentile(boots, lo_q)), float(np.percentile(boots, hi_q))
+
+
+def clopper_pearson_interval(k: int, n: int, ci: float = 0.95) -> tuple[float, float]:
+    """Two-sided Clopper-Pearson (exact binomial) interval for k successes / n.
+
+    Used for small-n safety metrics (probe abstention, false-answer rate,
+    gate accepted-error) where normal/bootstrap approximations are too
+    optimistic. k<=0 -> [0, beta], k>=n -> [alpha, 1].
+    """
+    from scipy.stats import beta
+
+    if n <= 0:
+        return 0.0, 0.0
+    alpha = 1.0 - ci
+    lo = 0.0 if k <= 0 else float(beta.ppf(alpha / 2.0, k, n - k + 1))
+    hi = 1.0 if k >= n else float(beta.ppf(1.0 - alpha / 2.0, k + 1, n - k))
+    return lo, hi

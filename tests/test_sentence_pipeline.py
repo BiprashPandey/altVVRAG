@@ -91,7 +91,10 @@ def test_bad_quote_triggers_retry_then_abstain(monkeypatch, tmp_path):
                         gate="none", doc_id=doc_id)
     assert calls["n"] == 2  # original + one retry
     assert r["abstained"] is True
-    assert "quote" in r["abstain_reason"]
+    # Run 8: veto reasons are specific; type mismatch on a money question is
+    # itself decisive, quote failure otherwise (both -> abstain).
+    assert ("quote" in r["abstain_reason"]
+            or "type" in r["abstain_reason"])
 
 
 def test_unanswerable_retry_recovers_ocr_noise_answer(monkeypatch, tmp_path):

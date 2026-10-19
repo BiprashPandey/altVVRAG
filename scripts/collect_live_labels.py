@@ -43,6 +43,8 @@ def main() -> None:
     ap.add_argument("--n-samples", type=int, default=1)
     ap.add_argument("--grounding", default="span", choices=["span", "heatmap"])
     ap.add_argument("--gate", default="none", help="gate mode for the recorded run")
+    ap.add_argument("--retrieval-mode", default="",
+                    help="keyword|visual|hybrid ('' = config default)")
     ap.add_argument("--work-dir", default="results/live_labels_work")
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--sleep", type=float, default=0.0, help="seconds between questions")
@@ -67,7 +69,8 @@ def main() -> None:
                     reader_mode=args.reader_mode, provider=args.provider,
                     model=args.model, n_samples=args.n_samples,
                     grounding=args.grounding, gate=args.gate,
-                    doc_id=g.get("doc_id"))
+                    doc_id=g.get("doc_id"),
+                    retrieval_mode=args.retrieval_mode or None)
             except Exception as e:  # noqa: BLE001
                 log.warning("%s failed: %s", qid, e)
                 continue
@@ -77,6 +80,8 @@ def main() -> None:
                 "answer": r["answer"], "correct": bool(correct),
                 "abstained": bool(r["abstained"]), "score": r.get("score"),
                 "features": r.get("features"), "abstain_reason": r.get("abstain_reason"),
+                "verified": r.get("verified"), "support": r.get("support"),
+                "retrieval": r.get("retrieval_debug"),
             }
             rows.append(row)
             f.write(json.dumps(row) + "\n")

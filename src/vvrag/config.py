@@ -22,6 +22,12 @@ class RetrieverConfig:
     top_k: int = 3
     pooling: str = "row_col_mean"
     query_encoder: str = "colqwen"
+    # Phase 1 (2026-10-18): keyword | visual | hybrid page ranking.
+    # "keyword" preserves the pre-Run-7 behavior; the UI/run harnesses can
+    # override per call. `rrf_k` is the reciprocal-rank-fusion constant.
+    retrieval_mode: str = "keyword"
+    rrf_k: int = 60
+    query_vectors_dir: str = "data/query_cache"
 
 
 @dataclass
@@ -46,6 +52,9 @@ class ReaderConfig:
     retry_on_unanswerable: bool = True
     unanswerable_retry_overlap: float = 0.2
     max_answer_retries: int = 1
+    # Phase 2: multi-page reading (top-k pages in the prompt; primary has images)
+    max_pages: int = 3
+    next_page_retry: bool = True
 
 
 @dataclass
@@ -53,6 +62,29 @@ class VerifyConfig:
     quote_threshold: float = 0.8
     # suggestion #7: tolerant quote check that ignores OCR whitespace/case noise
     ocr_normalize: bool = True
+    # Phase 3: deterministic answer-support veto (answer must appear in the
+    # cited text or be entailed by it, else the evidence is not "verified").
+    require_answer_support: bool = False
+    support_entail_threshold: float = 0.5
+    # Phase 9 (Run 8): question-aware checks
+    answer_type_check: bool = True       # "how many" needs a number, ...
+    comparison_check: bool = True        # comparisons need both values cited
+    # Visual middle tier: "off" | "agreement" | "cross_family"
+    visual_tier: str = "cross_family"
+    visual_min_agreement: float = 0.66
+    cross_family_provider: str = "groq"
+    cross_family_model: str = "qwen/qwen3.8-27b"
+
+
+@dataclass
+class RunConfig:
+    """Live test-run harness settings (moved out of scripts 2026-10-18)."""
+    live_call_gap_s: float = 25.0
+    model_candidates: list = field(default_factory=lambda: [
+        "gemini-3.5-flash-lite", "gemini-3.8-flash", "gemini-3.6-flash",
+        "gemini-3.1-flash-lite", "gemini-3.7-flash",
+    ])
+    reader_model_pinned: str = ""
 
 
 @dataclass
@@ -107,6 +139,7 @@ class AppConfig:
     gate: GateConfig = field(default_factory=GateConfig)
     ratelimit: RatelimitConfig = field(default_factory=RatelimitConfig)
     eval: EvalConfig = field(default_factory=EvalConfig)
+    run: RunConfig = field(default_factory=RunConfig)
     cache_dir: str = "data/cache"
 
 
@@ -148,6 +181,7 @@ def load_config(config_path: str | Path = "config.yaml", dotenv_path: str | Path
         gate=GateConfig(**data.get("gate", {})),
         ratelimit=RatelimitConfig(**data.get("ratelimit", {})),
         eval=EvalConfig(**data.get("eval", {})),
+        run=RunConfig(**data.get("run", {})),
         cache_dir=data.get("cache_dir", "data/cache"),
     )
 

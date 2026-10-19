@@ -48,8 +48,14 @@ def ocr_page(
     page: int,
     lang: str = "eng",
     min_conf: int = 30,
+    upscale: float = 2.0,
 ) -> list[WordBox]:
-    """Run Tesseract on a page image -> WordBoxes. Raises OCRError if unavailable."""
+    """Run Tesseract on a page image -> WordBoxes. Raises OCRError if unavailable.
+
+    `upscale` re-samples the image with LANCZOS before OCR (slide decks are
+    chart-heavy; 2x measurably helps small text) and scales boxes back to the
+    original page coordinates.
+    """
     try:
         import pytesseract
         from PIL import Image
@@ -63,8 +69,14 @@ def ocr_page(
     try:
         with Image.open(image_path) as im:
             width, height = im.size
+            if upscale and upscale > 1.0:
+                img = im.convert("L").resize(
+                    (int(width * upscale), int(height * upscale)),
+                    Image.LANCZOS)
+            else:
+                img = im.copy()
         data = pytesseract.image_to_data(
-            str(image_path), lang=lang, output_type=pytesseract.Output.DICT
+            img, lang=lang, output_type=pytesseract.Output.DICT
         )
     except Exception as e:
         raise OCRError(
@@ -72,6 +84,7 @@ def ocr_page(
             f"Windows: install via UB Mannheim build and set TESSDATA_PREFIX): {e}"
         ) from e
 
+    sc = 1.0 / upscale if upscale and upscale > 1.0 else 1.0
     boxes: list[WordBox] = []
     n = len(data.get("text", []))
     for i in range(n):
@@ -88,16 +101,17 @@ def ocr_page(
                 page=page,
                 text=text,
                 box=(
-                    int(data["left"][i]),
-                    int(data["top"][i]),
-                    int(data["left"][i]) + int(data["width"][i]),
-                    int(data["top"][i]) + int(data["height"][i]),
+                    int(data["left"][i] * sc),
+                    int(data["top"][i] * sc),
+                    int((data["left"][i] + data["width"][i]) * sc),
+                    int((data["top"][i] + data["height"][i]) * sc),
                 ),
                 block_id=int(data["block_num"][i]),
                 line_id=int(data["line_num"][i]),
             )
         )
-    log.info("OCR %s p%d: %d words (lang=%s)", doc_id, page, len(boxes), lang)
+    log.info("OCR %s p%d: %d words (lang=%s, upscale=%.1f)",
+             doc_id, page, len(boxes), lang, upscale)
     return boxes
 
 

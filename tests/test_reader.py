@@ -71,6 +71,27 @@ def test_parse_invalid_then_retry_once():
     assert c2 == 2 and s2[0].answer == "UNANSWERABLE" and s2[0].raw == "bad2"
 
 
+def test_parse_visual_region_ext():
+    from vvrag.reader.claims import parse_reader_output_ext
+
+    raw = ('{"answer": "65", "quote": "", "sentence_ids": [],'
+           ' "evidence_type": "visual",'
+           ' "region": {"page": "p1", "box_frac": [0.1, 0.2, 0.4, 0.5]},'
+           ' "claims": []}')
+    ans, quote, sids, refs, region, claims, ok = parse_reader_output_ext(raw)
+    assert ok and ans == "65"
+    assert region == {"page": 1, "box_frac": [0.1, 0.2, 0.4, 0.5],
+                      "evidence_type": "visual"}
+    # invalid boxes / pages are dropped, never crash
+    bad = ('{"answer": "x", "region": {"page": "p0",'
+           ' "box_frac": [0.9, 0.9, 0.1, 0.1]}}')
+    _a, _q, _s, _r, reg2, _c, ok2 = parse_reader_output_ext(bad)
+    assert ok2 and reg2 is None
+    no_reg = '{"answer": "x", "sentence_ids": [3]}'
+    _a, _q, _s, _r, reg3, _c, _o = parse_reader_output_ext(no_reg)
+    assert reg3 is None
+
+
 def test_primary_sample_uses_temp_zero():
     r = SequenceMockReader([GOOD, GOOD, GOOD])
     run_reader_samples(r, [], "prompt", n_samples=3, temperature=0.7)

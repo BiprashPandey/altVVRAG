@@ -157,14 +157,23 @@ def sentences_from_page(
         "WHERE doc_id=? AND page=?", (doc_id, page)).fetchall()
     words = [WordBox(doc_id, page, r[0], (r[1], r[2], r[3], r[4]), r[5], r[6],
                      r[7] if r[7] is not None else -1) for r in rows_w]
-    rows = con.execute(
-        "SELECT sent_id, text, x0, y0, x1, y1, block_id FROM sentences "
-        "WHERE doc_id=? AND page=? ORDER BY sent_id",
-        (doc_id, page),
-    ).fetchall()
+    try:
+        rows = con.execute(
+            "SELECT sent_id, text, x0, y0, x1, y1, block_id, source FROM sentences "
+            "WHERE doc_id=? AND page=? ORDER BY sent_id",
+            (doc_id, page),
+        ).fetchall()
+    except Exception:  # noqa: BLE001 - legacy DB without the source column
+        rows = con.execute(
+            "SELECT sent_id, text, x0, y0, x1, y1, block_id FROM sentences "
+            "WHERE doc_id=? AND page=? ORDER BY sent_id",
+            (doc_id, page),
+        ).fetchall()
+        rows = [(*r, "textlayer") for r in rows]
     if rows:
         sents = [SentenceSpan(doc_id=doc_id, page=page, sent_id=r[0], text=r[1],
-                              box=(r[2], r[3], r[4], r[5]), block_id=r[6]) for r in rows]
+                              box=(r[2], r[3], r[4], r[5]), block_id=r[6],
+                              source=r[7] or "textlayer") for r in rows]
         return sents, words
     sents, _ = build_sentences(words)
     return sents, words

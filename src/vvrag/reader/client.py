@@ -23,6 +23,8 @@ from vvrag.schemas import ReaderSample
 CANNED_JSON = json.dumps(
     {
         "answer": "mock answer",
+        "quote": "",
+        "sentence_ids": [],
         "claims": [{"text": "The mock page supports the mock answer.", "answer_span": "mock answer"}],
     }
 )
@@ -256,7 +258,7 @@ def run_reader_samples(
     Invalid JSON is retried once per sample, then marked failed
     (answer UNANSWERABLE, raw kept). Returns (samples, n_api_calls).
     """
-    from vvrag.reader.claims import parse_reader_output_full
+    from vvrag.reader.claims import parse_reader_output_ext
 
     samples: list[ReaderSample] = []
     api_calls = 0
@@ -264,13 +266,16 @@ def run_reader_samples(
     def _one(temp: float) -> tuple[ReaderSample, int]:
         raw = reader.generate(images, prompt, temp, 1)[0]
         calls = 1
-        answer, quote, sids, claims, ok = parse_reader_output_full(raw, max_claims)
+        answer, quote, sids, refs, region, claims, ok = parse_reader_output_ext(
+            raw, max_claims)
         if not ok:  # retry once
             raw = reader.generate(images, prompt, temp, 1)[0]
             calls += 1
-            answer, quote, sids, claims, ok = parse_reader_output_full(raw, max_claims)
+            answer, quote, sids, refs, region, claims, ok = parse_reader_output_ext(
+                raw, max_claims)
         return ReaderSample(sample_id=0, answer=answer, claims=claims, raw=raw,
-                            quote=quote, sentence_ids=sids), calls
+                            quote=quote, sentence_ids=sids,
+                            sentence_refs=refs, region=region), calls
 
     for s in range(n_samples):
         temp = 0.0 if s == 0 else temperature
@@ -291,6 +296,7 @@ class FallbackReader(ReaderClient):
     """
 
     _QUOTA_HINTS = ("429", "quota", "rate limit", "rate_limit", "resource_exhausted",
+                    "permission_denied", "denied access",
                     "503", "overloaded", "unavailable", "high demand")
 
     def __init__(self, primary: ReaderClient, fallback: ReaderClient | None = None) -> None:
@@ -317,6 +323,58 @@ class FallbackReader(ReaderClient):
             return self.fallback.generate(images, prompt, temperature, n)
 
 
+class RotatingKeyReader(ReaderClient):
+    """Same provider+model, multiple API keys; rotate keys on quota errors.
+
+    Keys keep ONE model fixed across the run (no model confound); each key is
+    its own project bucket, so rotation multiplies the daily quota. On a
+    quota-like error from the current key, advance to the next; after a full
+    cycle, re-raise so the caller (model rotation / abstention) can react.
+    """
+
+    def __init__(self, model: str, api_keys: list[str], max_output_tokens: int = 512,
+                 reader_cls=None) -> None:
+        self.model = model
+        self.api_keys = list(api_keys)
+        self.max_output_tokens = max_output_tokens
+        self._reader_cls = reader_cls or GeminiReader
+        self._idx = 0
+        self._readers: list[ReaderClient] = []
+        self.key_rotations = 0
+
+    def _reader(self) -> ReaderClient:
+        while len(self._readers) <= self._idx:
+            self._readers.append(
+                self._reader_cls(self.model, self.api_keys[len(self._readers)],
+                                 self.max_output_tokens))
+        return self._readers[self._idx]
+
+    def generate(self, images, prompt, temperature, n) -> list[str]:
+        for _ in range(len(self.api_keys)):
+            try:
+                return self._reader().generate(images, prompt, temperature, n)
+            except Exception as e:  # noqa: BLE001 - rotate only on quota errors
+                if not FallbackReader._is_quota(e):
+                    raise
+                self._idx = (self._idx + 1) % len(self.api_keys)
+                self.key_rotations += 1
+        raise RuntimeError("all API keys exhausted (quota)")
+
+
+GEMINI_KEY_ENV_NAMES = ("GEMINI_API_KEY", *[f"GEMINI_API_KEY{i}" for i in range(2, 10)],
+                        *[f"GEMINI_API_KEY_{i}" for i in range(2, 10)])
+
+
+def _gemini_keys(env_fn) -> list[str]:
+    """All distinct Gemini keys present in the environment (order preserved)."""
+    keys: list[str] = []
+    for name in GEMINI_KEY_ENV_NAMES:
+        v = env_fn(name)
+        if v and v not in keys:
+            keys.append(v)
+    return keys
+
+
 def _build_reader(provider: str, model: str, max_output_tokens: int) -> ReaderClient:
     """Construct a raw (uncached) reader for one provider."""
     from vvrag.config import env
@@ -325,10 +383,12 @@ def _build_reader(provider: str, model: str, max_output_tokens: int) -> ReaderCl
     if provider in ("mock", "test"):
         return MockReader()
     if provider == "gemini":
-        key = env("GEMINI_API_KEY")
-        if not key:
+        keys = _gemini_keys(env)
+        if not keys:
             raise RuntimeError("GEMINI_API_KEY missing (see .env.example)")
-        return GeminiReader(model, key, max_output_tokens)
+        if len(keys) == 1:
+            return GeminiReader(model, keys[0], max_output_tokens)
+        return RotatingKeyReader(model, keys, max_output_tokens)
     if provider == "groq":
         key = env("GROQ_API_KEY")
         if not key:

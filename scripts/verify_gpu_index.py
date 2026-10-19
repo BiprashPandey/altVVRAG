@@ -2,8 +2,11 @@
 
 Part A: integrity (manifest vs files, grid consistency, SQLite, Qdrant).
 Part B: functional (self-retrieval, heatmap highlights, NLI verifier,
-        scorer+gate) with patch-derived pseudo-queries, since the text
-        query-side ColQwen encoder does not exist yet (documented gap).
+        scorer+gate) with patch-derived pseudo-queries. The text-side ColQwen
+        encoder now exists (retrieve/query_embed.py::ColQwenQueryEmbedder;
+        query-side cache via scripts/precompute_query_vectors.py), but this
+        script still uses patch pseudo-queries so it stays runnable without
+        the model weights or a query cache.
 
 Outputs: results/demo/index_verify_{stamp}/{verify.json, overlay.png,
          crop.png, verify.log}. All numbers also printed to stdout.

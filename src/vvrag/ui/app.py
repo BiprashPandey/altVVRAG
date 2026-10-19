@@ -133,62 +133,111 @@ async function ask(){
 function render(r){
  const ev=r.evidence||{};
  const cls=r.abstained?'bad':'ok';
- let html=`<h3>Answer <span class="badge ${cls}">${r.abstained?'NOT FOUND':'ANSWERED'}</span> <span class="badge ok">score ${r.score}</span></h3>`;
+ const scoreBadge=r.abstained
+  ?`<span class="badge" title="confidence score vs the abstain threshold">score ${r.score}${r.gate_mode&&r.gate_mode!=='none'?(' / tau '+r.tau):''}</span>`
+  :`<span class="badge ok">score ${r.score}${r.gate_mode&&r.gate_mode!=='none'?(' / tau '+r.tau):''}</span>`;
+ let html=`<h3>Answer <span class="badge ${cls}">${r.abstained?'NOT FOUND':'ANSWERED'}</span> ${scoreBadge}</h3>`;
  if(r.abstained){
   html+=`<p class="badge warn">Not found in this document.</p>`;
-  if(r.abstain_reason)html+=`<p class="small">reason: ${r.abstain_reason}</p>`;
+  if(r.abstain_reason)html+=`<p class="small">reason: ${esc(r.abstain_reason)}</p>`;
   if((r.closest_passages||[]).length){
    html+=`<p class="small"><b>Closest passages:</b></p><ul>`;
    for(const p of r.closest_passages){html+=`<li>${esc(p.text).slice(0,240)} <span class="small">(score ${p.score})</span></li>`}
    html+=`</ul>`;
   }
  } else {
-  html+=`<p><b>${esc(r.answer)}</b></p>`;
+  const tierOk=r.tier==='text'||r.verified===true;
+  const vBadge=tierOk?'':(r.tier==='visual'
+   ?'<span class="badge warn" title="answer shown by a visual region; confirmed by an independent cross-family check (not a verbatim text quote)">not text-verified (visual region)</span>'
+   :'<span class="badge warn" title="answer not contained in / entailed by the cited text">evidence unverified</span>');
+  html+=`<p><b>${esc(r.answer)}</b> ${vBadge}</p>`;
   const quote=(r.samples&&r.samples[0]&&r.samples[0].quote)||'';
   if(quote)html+=`<p class="small"><b>quote:</b> \u201c${esc(quote)}\u201d</p>`;
+  if(r.support&&r.support.require)html+=`<p class="small">answer-support: ${esc(r.support.method)} (score ${r.support.score})</p>`;
+  if(r.citations&&r.citations.status&&r.citations.status!=='none'&&r.citations.status!=='ok')
+   html+=`<p class="small">citations: ${esc(r.citations.status)} (${r.citations.n_resolved}/${r.citations.n_refs} resolved)</p>`;
  }
  html+=`<p class="small">page: ${ev.doc_id||'-'} p${ev.page??'-'} | crop text: ${esc((ev.crop_text||'')).slice(0,300)}</p>`;
- if(ev.overlay_url){
-  html+=`<div id="evwrap" style="position:relative;display:inline-block;max-width:100%">`
-   +`<img class="ev" id="evimg" src="${ev.overlay_url}"></div>`;
-  html+=`<img class="ev" src="${ev.crop_url}">`;
- }
  const cited=r.cited_sentences||[];
+ // Phase 2: citations may live on several pages -> page tabs. Legacy results
+ // without ev.pages behave exactly like before (single primary page).
+ let pgs=(ev.pages&&ev.pages.length)?ev.pages.slice():
+  [{doc_id:ev.doc_id,page:ev.page,page_url:ev.page_url,box_frac:ev.box_frac||[]}];
+ pgs.forEach(function(p){
+  p.cites=cited.map(function(c,i){return {i:i,c:c}}).filter(function(x){
+   const pgOk=(x.c.page==null)?(p.page===ev.page&&p.doc_id===ev.doc_id):(x.c.page===p.page);
+   return pgOk&&(x.c.doc_id==null||x.c.doc_id===p.doc_id);
+  }).map(function(x){return {i:x.i,frac:x.c.box_frac,sid:x.c.sent_id,text:x.c.text}});
+ });
+ const score=function(p){return p.cites.length+((p.doc_id===ev.doc_id&&p.page===ev.page)?0.5:0)};
+ let active=0,bestv=-1;
+ pgs.forEach(function(p,k){const v=score(p);if(v>bestv){bestv=v;active=k}});
+ if(pgs.length>1){
+  html+=`<p class="small"><b>cited pages:</b> `;
+  pgs.forEach(function(p,k){
+   html+=`<button class="ptab" data-k="${k}" style="margin-right:6px;cursor:pointer">`
+    +`${esc(p.doc_id||'')} p${p.page}</button>`;
+  });
+  html+=`</p>`;
+ }
+ if(ev.overlay_url||pgs.length){
+  html+=`<div id="evwrap" style="position:relative;display:inline-block;max-width:100%">`
+   +`<img class="ev" id="evimg"></div>`;
+  html+=`<div id="cropwrap" style="display:${pgs.length>1?'none':''}">`
+   +`<img class="ev" id="evcrop" src="${ev.crop_url||''}"></div>`;
+ }
  if(cited.length){
   html+=`<p class="small"><b>Cited sentences</b> (click to highlight):</p><ul id="sentlist">`;
   cited.forEach(function(s,i){
+   const tag=s.sent_id<0?`<span class="badge warn">region</span>`
+    :`<span class="badge ok">S${s.sent_id}${s.page!=null?(' p'+s.page):''}</span>`;
    html+=`<li class="sitem" data-i="${i}" style="cursor:pointer">`
-    +`<span class="badge ok">S${s.sent_id}</span> ${esc(s.text)}</li>`;
+    +`${tag} ${esc(s.text)}</li>`;
   });
   html+=`</ul>`;
  }
  html+=`<pre>${esc(JSON.stringify({features:r.features,retrieval:r.retrieval,api_calls:r.api_calls},null,1))}</pre>`;
  document.getElementById('result').innerHTML=html;
- drawBoxes(cited, ev);
+ LAST_EV=ev; PAGES=pgs;
+ setPage(active);
+ document.querySelectorAll('.ptab').forEach(function(b){b.onclick=function(){setPage(+b.dataset.k)}});
  document.querySelectorAll('#sentlist .sitem').forEach(function(li){
-  li.onclick=function(){highlight(li.getAttribute('data-i'))};
+  li.onclick=function(){highlight(+li.getAttribute('data-i'))};
  });
 }
-function drawBoxes(cited, ev){
- const wrap=document.getElementById('evwrap'); if(!wrap)return;
- const img=document.getElementById('evimg');
- const add=function(i){
-  const s=cited[i]||{}; const frac=s.box_frac||null; if(!frac)return;
-  const d=document.createElement('div'); d.className='sentbox'; d.dataset.i=i;
-  d.title='S'+s.sent_id+': '+(s.text||'');  // tooltip: which sentence this box is
-  d.style.position='absolute'; d.style.border='2px solid #1a73e8'; d.style.boxSizing='border-box';
-  d.style.pointerEvents='none'; d.style.display='none';
-  d.style.left=(frac[0]*100)+'%'; d.style.top=(frac[1]*100)+'%';
-  d.style.width=((frac[2]-frac[0])*100)+'%'; d.style.height=((frac[3]-frac[1])*100)+'%';
+let PAGES=[],activePage=0,LAST_EV=null;
+function setPage(k){
+ const pg=PAGES[k];if(!pg)return;activePage=k;
+ const ev=LAST_EV||{};
+ const img=document.getElementById('evimg');if(!img)return;
+ const isPrim=(pg.doc_id===ev.doc_id&&pg.page===ev.page);
+ img.src=(isPrim&&ev.overlay_url)?ev.overlay_url:(pg.page_url||ev.page_url||'');
+ document.querySelectorAll('.ptab').forEach(function(b){
+  const on=(+b.dataset.k===k);b.style.background=on?'#1a73e8':'';b.style.color=on?'#fff':'';
+ });
+ const cw=document.getElementById('cropwrap');
+ if(cw)cw.style.display=(isPrim&&ev.crop_url)?'':'none';
+ const wrap=document.getElementById('evwrap');if(!wrap)return;
+ wrap.querySelectorAll('.sentbox').forEach(function(b){b.remove()});
+ (pg.cites||[]).forEach(function(ci){
+  if(!ci.frac)return;
+  const d=document.createElement('div');d.className='sentbox';d.dataset.i=ci.i;
+  d.title='S'+ci.sid+': '+(ci.text||'');
+  d.style.position='absolute';d.style.border='2px solid #1a73e8';d.style.boxSizing='border-box';
+  d.style.pointerEvents='none';d.style.display='none';
+  d.style.left=(ci.frac[0]*100)+'%';d.style.top=(ci.frac[1]*100)+'%';
+  d.style.width=((ci.frac[2]-ci.frac[0])*100)+'%';d.style.height=((ci.frac[3]-ci.frac[1])*100)+'%';
   wrap.appendChild(d);
- };
- cited.forEach(function(_,i){add(i)});
+ });
  img.onload=function(){wrap.style.width=img.clientWidth+'px'};
+ if(img.complete&&img.naturalWidth)img.onload();
 }
 function highlight(i){
- document.querySelectorAll('.sentbox').forEach(function(b){b.style.display=b.dataset.i===i?'block':'none'});
+ const k=PAGES.findIndex(function(p){return (p.cites||[]).some(function(ci){return ci.i===i})});
+ if(k>=0&&k!==activePage)setPage(k);
+ document.querySelectorAll('#evwrap .sentbox').forEach(function(b){b.style.display=(+b.dataset.i===i)?'block':'none'});
  document.querySelectorAll('#sentlist .sitem').forEach(function(li){
-  li.style.background=li.getAttribute('data-i')===i?'#fff3c4':'';
+  li.style.background=(+li.getAttribute('data-i')===i)?'#fff3c4':'';
  });
 }
 function esc(s){return (s==null?'':String(s)).replace(/[&<>]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c]})}

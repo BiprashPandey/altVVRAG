@@ -49,4 +49,54 @@ def test_quota_message_detection():
     assert FallbackReader._is_quota(RateLimitError("x"))
     assert FallbackReader._is_quota(RuntimeError("HTTP 503 unavailable"))
     assert FallbackReader._is_quota(RuntimeError("RESOURCE_EXHAUSTED"))
+    assert FallbackReader._is_quota(RuntimeError(
+        "403 PERMISSION_DENIED. Your project has been denied access."))
+    assert FallbackReader._is_quota(RuntimeError("429 too many requests"))
     assert not FallbackReader._is_quota(ValueError("bad prompt"))
+
+
+class _ScriptedReader:
+    """Records which key it was built with; fails on any scripted key."""
+
+    fail_on: set = set()
+    built: list = []
+
+    def __init__(self, model, api_key, max_output_tokens=512):
+        self.api_key = api_key
+        _ScriptedReader.built.append(api_key)
+
+    def generate(self, images, prompt, temperature, n):
+        if self.api_key in _ScriptedReader.fail_on:
+            raise RuntimeError("429 RESOURCE_EXHAUSTED (scripted)")
+        return [f"ok:{self.api_key}"]
+
+
+def test_rotating_key_reader_skips_exhausted_key():
+    from vvrag.reader.client import RotatingKeyReader
+
+    _ScriptedReader.fail_on = {"k2"}
+    _ScriptedReader.built = []
+    rk = RotatingKeyReader("m", ["k1", "k2", "k3"], reader_cls=_ScriptedReader)
+    out = rk.generate([], "p", 0.0, 1)
+    assert out == ["ok:k1"]
+    assert rk.key_rotations == 0
+    _ScriptedReader.fail_on = {"k1"}
+    out = rk.generate([], "p", 0.0, 1)
+    assert out == ["ok:k2"]
+    assert rk.key_rotations == 1
+
+
+def test_rotating_key_reader_rotates_on_permission_denied():
+    from vvrag.reader.client import RotatingKeyReader
+
+    class _Denied(_ScriptedReader):
+        def generate(self, images, prompt, temperature, n):
+            if self.api_key == "kd":
+                raise RuntimeError(
+                    "403 PERMISSION_DENIED. Your project has been denied access.")
+            return [f"ok:{self.api_key}"]
+
+    _ScriptedReader.built = []
+    rk = RotatingKeyReader("m", ["kd", "kg"], reader_cls=_Denied)
+    assert rk.generate([], "p", 0.0, 1) == ["ok:kg"]
+    assert rk.key_rotations == 1

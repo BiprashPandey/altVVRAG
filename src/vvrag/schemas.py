@@ -62,6 +62,7 @@ class SentenceSpan:
     text: str
     box: tuple[int, int, int, int]  # (x0, y0, x1, y1) pixels
     block_id: int = 0
+    source: str = "textlayer"  # textlayer | ocr | ocr-reocr | vlm
 
     def to_dict(self) -> dict:
         d = asdict(self)
@@ -72,8 +73,10 @@ class SentenceSpan:
     def from_dict(cls, d: dict) -> "SentenceSpan":
         d = dict(d)
         d["box"] = tuple(d["box"])
+        d.setdefault("source", "textlayer")
         return cls(**{k: d.get(k) for k in
-                      ("doc_id", "page", "sent_id", "text", "box", "block_id")})
+                      ("doc_id", "page", "sent_id", "text", "box", "block_id",
+                       "source")})
 
 
 @dataclass
@@ -167,6 +170,12 @@ class ReaderSample:
     raw: str = ""
     quote: str = ""
     sentence_ids: list[int] = field(default_factory=list)
+    # Phase 2: per-citation (page, sent_id) refs parsed from namespaced ids
+    # ("p3.s12") or legacy ints (page=None -> primary page). JSON-able pairs.
+    sentence_refs: list | None = None
+    # Phase 9 (Run 8): optional visual region citation
+    # {"page": label|None, "box_frac": [x0,y0,x1,y1], "evidence_type": "visual"}
+    region: dict | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -176,6 +185,9 @@ class ReaderSample:
             "raw": self.raw,
             "quote": self.quote,
             "sentence_ids": list(self.sentence_ids),
+            "sentence_refs": ([list(r) for r in self.sentence_refs]
+                              if self.sentence_refs is not None else None),
+            "region": self.region,
         }
 
     @classmethod
@@ -187,6 +199,8 @@ class ReaderSample:
             raw=d.get("raw", ""),
             quote=d.get("quote", ""),
             sentence_ids=list(d.get("sentence_ids", [])),
+            sentence_refs=d.get("sentence_refs"),
+            region=d.get("region"),
         )
 
 
@@ -201,6 +215,14 @@ class Features:
     localize_score: float = 0.0
     evidence_valid: bool = False
     quote_match: float = 0.0
+    # Phase 4: verification veto + retrieval-quality signals
+    answer_supported: float = 1.0
+    cited_is_top1: float = 1.0
+    visual_margin: float = 0.0
+    # Phase 9 (Run 8): citation/question-aware verification
+    citation_resolved: float = 1.0
+    answer_type_match: float = 1.0
+    support_type: float = 1.0
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -212,12 +234,21 @@ class Features:
         d.setdefault("localize_score", 0.0)
         d.setdefault("evidence_valid", False)
         d.setdefault("quote_match", 0.0)
+        d.setdefault("answer_supported", 1.0)
+        d.setdefault("cited_is_top1", 1.0)
+        d.setdefault("visual_margin", 0.0)
+        d.setdefault("citation_resolved", 1.0)
+        d.setdefault("answer_type_match", 1.0)
+        d.setdefault("support_type", 1.0)
         return cls(**{k: d.get(k, v) for k, v in [
             ("agreement", 0.0), ("entail_prob", None),
             ("retrieval_margin", 0.0), ("heat_concentration", 0.0),
             ("n_claims", 0), ("crop_has_text", True),
             ("localize_score", 0.0), ("evidence_valid", False),
-            ("quote_match", 0.0)]})
+            ("quote_match", 0.0), ("answer_supported", 1.0),
+            ("cited_is_top1", 1.0), ("visual_margin", 0.0),
+            ("citation_resolved", 1.0), ("answer_type_match", 1.0),
+            ("support_type", 1.0)]})
 
 
 @dataclass

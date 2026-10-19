@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS sentences(
   doc_id TEXT, page INTEGER, sent_id INTEGER,
   text TEXT, x0 INTEGER, y0 INTEGER, x1 INTEGER, y1 INTEGER,
   block_id INTEGER DEFAULT 0,
+  source TEXT DEFAULT 'textlayer',
   PRIMARY KEY (doc_id, page, sent_id));
 CREATE INDEX IF NOT EXISTS idx_sent_docpage ON sentences(doc_id, page);
 """
@@ -57,6 +58,10 @@ def _migrate(con: sqlite3.Connection) -> None:
     cols = {r[1] for r in con.execute("PRAGMA table_info(word_boxes)")}
     if "sent_id" not in cols:
         con.execute("ALTER TABLE word_boxes ADD COLUMN sent_id INTEGER DEFAULT -1")
+        con.commit()
+    scols = {r[1] for r in con.execute("PRAGMA table_info(sentences)")}
+    if "source" not in scols:
+        con.execute("ALTER TABLE sentences ADD COLUMN source TEXT DEFAULT 'textlayer'")
         con.commit()
 
 
@@ -91,8 +96,9 @@ def replace_sentences(con: sqlite3.Connection, sentences: list) -> None:
     for doc_id, page in keys:
         con.execute("DELETE FROM sentences WHERE doc_id=? AND page=?", (doc_id, page))
     con.executemany(
-        "INSERT INTO sentences VALUES (?,?,?,?,?,?,?,?,?)",
-        [(s.doc_id, s.page, s.sent_id, s.text, *s.box, s.block_id) for s in sentences],
+        "INSERT INTO sentences VALUES (?,?,?,?,?,?,?,?,?,?)",
+        [(s.doc_id, s.page, s.sent_id, s.text, *s.box, s.block_id,
+          getattr(s, "source", "textlayer") or "textlayer") for s in sentences],
     )
     con.commit()
 

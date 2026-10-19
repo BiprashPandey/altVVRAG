@@ -66,36 +66,133 @@ def parse_reader_output_full(
     top-level answer citation; each claim may also carry
     `evidence_sentence_ids` (legacy word-id fields are ignored).
     """
+    answer, quote, ids, _refs, claims, ok = parse_reader_output_refs(raw, max_claims)
+    return answer, quote, ids, claims, ok
+
+
+_REF_RE = re.compile(r"^p?(\d+)\s*[.\-:/]\s*s?(\d+)$", re.IGNORECASE)
+
+
+def _parse_ref_list(value) -> tuple[list[int], list[list]]:
+    """Parse citation values: legacy ints (page=None) or namespaced "p3.s12".
+
+    Returns (sentence_ids, refs) where refs are JSON-able [page|None, sent_id].
+    """
+    if not isinstance(value, list) or not value:
+        return [], []
+    ints: list[int] = []
+    refs: list[list] = []
+    for x in value:
+        if isinstance(x, bool):
+            continue
+        if isinstance(x, int):
+            ints.append(x)
+            refs.append([None, x])
+            continue
+        if isinstance(x, float) and float(x).is_integer():
+            ints.append(int(x))
+            refs.append([None, int(x)])
+            continue
+        s = str(x).strip()
+        m = _REF_RE.match(s)
+        if m:
+            page, sid = int(m.group(1)), int(m.group(2))
+            refs.append([page, sid])
+            ints.append(sid)
+            continue
+        try:
+            iv = int(float(s))
+        except (TypeError, ValueError):
+            continue
+        ints.append(iv)
+        refs.append([None, iv])
+    return ints, refs
+
+
+def parse_reader_output_refs(
+    raw: str, max_claims: int = 5
+) -> tuple[str, str, list[int], list[list], list[Claim], bool]:
+    """Phase 2 variant: also returns per-citation (page, sent_id) refs.
+
+    Returns (answer, quote, sentence_ids, sentence_refs, claims, ok).
+    `sentence_ids` keeps only the sent_id ints (backward compatible);
+    `sentence_refs` is [page|None, sent_id] with page=None meaning "the
+    primary (image-attached) page".
+    """
+    answer, quote, ids, refs, _region, claims, ok = parse_reader_output_ext(
+        raw, max_claims)
+    return answer, quote, ids, refs, claims, ok
+
+
+def _parse_region(obj: dict) -> dict | None:
+    """Parse an optional visual-region citation.
+
+    Accepts {"region"|"visual_region": {"page": "p1"|1|null,
+    "box_frac": [x0,y0,x1,y1]} } (fractions 0-1 of that page). Returns
+    {"page": label|None, "box_frac": [4 floats], "evidence_type": str} or None.
+    """
+    r = obj.get("region") or obj.get("visual_region")
+    if not isinstance(r, dict):
+        return None
+    box = r.get("box_frac") or r.get("box")
+    if not (isinstance(box, (list, tuple)) and len(box) == 4):
+        return None
+    try:
+        f = [float(x) for x in box]
+    except (TypeError, ValueError):
+        return None
+    if not (0.0 <= f[0] < f[2] <= 1.01 and 0.0 <= f[1] < f[3] <= 1.01):
+        return None
+    page = r.get("page")
+    label = None
+    if page is not None:
+        if isinstance(page, bool):
+            page = None
+        elif isinstance(page, (int, float)) and float(page).is_integer():
+            label = int(page)
+        else:
+            m = _REF_RE.match(str(page).strip()) or _PAGE_RE.match(str(page).strip())
+            if m:
+                label = int(m.group(1))
+    etype = str(obj.get("evidence_type", r.get("evidence_type", "")) or "").lower()
+    return {"page": label, "box_frac": f,
+            "evidence_type": etype if etype in ("text", "visual") else ""}
+
+
+_PAGE_RE = re.compile(r"^p?(\d+)$", re.IGNORECASE)
+
+
+def parse_reader_output_ext(
+    raw: str, max_claims: int = 5
+) -> tuple[str, str, list[int], list[list], dict | None, list[Claim], bool]:
+    """Full parse incl. the optional visual region (Phase 9/Run 8).
+
+    Returns (answer, quote, sentence_ids, sentence_refs, region, claims, ok).
+    """
     text = raw.strip()
     if text.startswith("```"):
         text = "\n".join(ln for ln in text.splitlines() if not ln.strip().startswith("```")).strip()
     try:
         obj = json.loads(text)
     except (json.JSONDecodeError, AttributeError):
-        return "UNANSWERABLE", "", [], [], False
+        return "UNANSWERABLE", "", [], [], None, [], False
     answer = str(obj.get("answer", "UNANSWERABLE"))
     quote = str(obj.get("quote", "") or "")
-    top_ids = _parse_int_list(obj.get("sentence_ids"))
+    top_ids, top_refs = _parse_ref_list(obj.get("sentence_ids"))
+    region = _parse_region(obj)
     claims: list[Claim] = []
     for c in obj.get("claims", [])[:max_claims]:
         if isinstance(c, dict) and str(c.get("text", "")).strip():
-            cids = _parse_int_list(c.get("evidence_sentence_ids", c.get("sentence_ids")))
+            cids, _crefs = _parse_ref_list(
+                c.get("evidence_sentence_ids", c.get("sentence_ids")))
             claims.append(Claim(text=str(c["text"]).strip(),
                                 answer_span=c.get("answer_span"),
                                 evidence_sentence_ids=cids))
-    if not top_ids and claims:
+    if not top_refs and claims:
         # fall back to the first claim's citations
-        top_ids = claims[0].evidence_sentence_ids or []
-    return answer, quote, top_ids, claims, True
-
-
-def _parse_int_list(value) -> list[int] | None:
-    if isinstance(value, list) and value:
-        try:
-            return [int(x) for x in value]
-        except (TypeError, ValueError):
-            return None
-    return None
+        top_ids = list(claims[0].evidence_sentence_ids or [])
+        top_refs = [[None, i] for i in top_ids]
+    return answer, quote, top_ids, top_refs, region, claims, True
 
 
 def validate_sentence_ids(ids: list[int] | None, n_sentences: int) -> tuple[bool, bool]:

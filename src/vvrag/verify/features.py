@@ -10,7 +10,9 @@ from vvrag.schemas import Features
 
 FEATURE_ORDER = ["agreement", "entail_prob", "retrieval_margin",
                  "heat_concentration", "n_claims", "crop_has_text",
-                 "localize_score", "evidence_valid", "quote_match"]
+                 "localize_score", "evidence_valid", "quote_match",
+                 "answer_supported", "cited_is_top1", "visual_margin",
+                 "citation_resolved", "answer_type_match", "support_type"]
 MISSING_ENTAIL_VALUE = 0.5
 
 
@@ -25,6 +27,12 @@ def build_features(
     localize_score: float = 0.0,
     evidence_valid: bool = False,
     quote_match: float = 0.0,
+    answer_supported: bool | float = 1.0,
+    cited_is_top1: bool | float = 1.0,
+    visual_margin: float = 0.0,
+    citation_resolved: bool | float = 1.0,
+    answer_type_match: bool | float | None = 1.0,
+    support_type: float = 1.0,
 ) -> Features:
     entail = entail_min if entail_min is not None else MISSING_ENTAIL_VALUE
     return Features(
@@ -37,6 +45,13 @@ def build_features(
         localize_score=float(localize_score),
         evidence_valid=bool(evidence_valid),
         quote_match=float(quote_match),
+        answer_supported=float(answer_supported),
+        cited_is_top1=float(cited_is_top1),
+        visual_margin=float(visual_margin),
+        citation_resolved=float(citation_resolved),
+        answer_type_match=(1.0 if answer_type_match is None
+                           else float(answer_type_match)),
+        support_type=float(support_type),
     )
 
 
@@ -60,6 +75,12 @@ def to_vector(f) -> list[float]:
         float(g("localize_score", 0.0) or 0.0),
         1.0 if g("evidence_valid", False) else 0.0,
         float(g("quote_match", 0.0) or 0.0),
+        float(g("answer_supported", 1.0) if g("answer_supported", 1.0) is not None else 1.0),
+        float(g("cited_is_top1", 1.0) if g("cited_is_top1", 1.0) is not None else 1.0),
+        float(g("visual_margin", 0.0) or 0.0),
+        float(g("citation_resolved", 1.0) if g("citation_resolved", 1.0) is not None else 1.0),
+        float(g("answer_type_match", 1.0) if g("answer_type_match", 1.0) is not None else 1.0),
+        float(g("support_type", 1.0) if g("support_type", 1.0) is not None else 1.0),
     ]
 
 

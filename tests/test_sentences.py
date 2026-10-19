@@ -76,3 +76,34 @@ def test_sentence_ids_for_answer_exact_and_fuzzy():
     # fuzzy: OCR typo variant still resolves (P3 gold sids not left empty)
     assert sentence_ids_for_answer("Row 1 Col3", sents) == [0]
     assert sentence_ids_for_answer("absent phrase entirely", sents) == []
+
+
+def test_source_column_roundtrip():
+    import sqlite3
+
+    from vvrag.ingest.index import connect_sqlite, replace_sentences
+    from vvrag.ingest.sentences import sentences_from_page
+
+    con = connect_sqlite(":memory:")
+    sents, _ = build_sentences(_line(["Hello", "world."]))
+    sents[0].source = "ocr-reocr"
+    replace_sentences(con, sents)
+    got, _ = sentences_from_page(con, sents[0].doc_id, 0)
+    assert got[0].source == "ocr-reocr"
+    con.close()
+
+    # legacy DB without the source column still loads (fallback path)
+    legacy = sqlite3.connect(":memory:")
+    legacy.execute(
+        "CREATE TABLE sentences(doc_id TEXT, page INTEGER, sent_id INTEGER, "
+        "text TEXT, x0 INTEGER, y0 INTEGER, x1 INTEGER, y1 INTEGER, "
+        "block_id INTEGER)")
+    legacy.execute(
+        "CREATE TABLE word_boxes(doc_id TEXT, page INTEGER, text TEXT, "
+        "x0 INTEGER, y0 INTEGER, x1 INTEGER, y1 INTEGER, block_id INTEGER, "
+        "line_id INTEGER, sent_id INTEGER)")
+    legacy.execute("INSERT INTO sentences VALUES ('d',0,0,'legacy text',0,0,5,5,0)")
+    legacy.commit()
+    got2, _ = sentences_from_page(legacy, "d", 0)
+    assert got2[0].text == "legacy text" and got2[0].source == "textlayer"
+    legacy.close()
