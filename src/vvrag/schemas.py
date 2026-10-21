@@ -176,6 +176,11 @@ class ReaderSample:
     # Phase 9 (Run 8): optional visual region citation
     # {"page": label|None, "box_frac": [x0,y0,x1,y1], "evidence_type": "visual"}
     region: dict | None = None
+    # Run 9 (guideline s4.2): the reader may flag "no evidence at all"
+    # (only then is the page skipped), plus a location hint and confidence.
+    no_evidence: bool = False
+    found_in: str = ""
+    confidence: float | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -188,6 +193,9 @@ class ReaderSample:
             "sentence_refs": ([list(r) for r in self.sentence_refs]
                               if self.sentence_refs is not None else None),
             "region": self.region,
+            "no_evidence": self.no_evidence,
+            "found_in": self.found_in,
+            "confidence": self.confidence,
         }
 
     @classmethod
@@ -201,6 +209,9 @@ class ReaderSample:
             sentence_ids=list(d.get("sentence_ids", [])),
             sentence_refs=d.get("sentence_refs"),
             region=d.get("region"),
+            no_evidence=bool(d.get("no_evidence", False)),
+            found_in=d.get("found_in", ""),
+            confidence=d.get("confidence"),
         )
 
 
@@ -221,8 +232,12 @@ class Features:
     visual_margin: float = 0.0
     # Phase 9 (Run 8): citation/question-aware verification
     citation_resolved: float = 1.0
-    answer_type_match: float = 1.0
     support_type: float = 1.0
+    # Run 9 (guideline s4.7): examiner verdict (strongest signal) + details
+    examiner_ran: float = 0.0
+    examiner_supported: float = 0.5   # 1 yes | 0.5 partly/unknown | 0 no
+    quote_seen_match: float = 0.5
+    details_ok: float = 1.0
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -238,8 +253,11 @@ class Features:
         d.setdefault("cited_is_top1", 1.0)
         d.setdefault("visual_margin", 0.0)
         d.setdefault("citation_resolved", 1.0)
-        d.setdefault("answer_type_match", 1.0)
         d.setdefault("support_type", 1.0)
+        d.setdefault("examiner_ran", 0.0)
+        d.setdefault("examiner_supported", 0.5)
+        d.setdefault("quote_seen_match", 0.5)
+        d.setdefault("details_ok", 1.0)
         return cls(**{k: d.get(k, v) for k, v in [
             ("agreement", 0.0), ("entail_prob", None),
             ("retrieval_margin", 0.0), ("heat_concentration", 0.0),
@@ -247,8 +265,9 @@ class Features:
             ("localize_score", 0.0), ("evidence_valid", False),
             ("quote_match", 0.0), ("answer_supported", 1.0),
             ("cited_is_top1", 1.0), ("visual_margin", 0.0),
-            ("citation_resolved", 1.0), ("answer_type_match", 1.0),
-            ("support_type", 1.0)]})
+            ("citation_resolved", 1.0), ("support_type", 1.0),
+            ("examiner_ran", 0.0), ("examiner_supported", 0.5),
+            ("quote_seen_match", 0.5), ("details_ok", 1.0)]})
 
 
 @dataclass

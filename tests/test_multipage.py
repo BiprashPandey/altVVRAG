@@ -84,7 +84,7 @@ def test_next_page_retry_promotes_second_page(monkeypatch, tmp_path):
 
     def fake_run(reader, images, prompt, n_samples=3, temperature=0.0, max_claims=5):
         calls["n"] += 1
-        if calls["n"] <= 2:  # original + same-page corrective retry: abstain
+        if calls["n"] <= 1:  # original: abstain (passage retry is off by default)
             return [ReaderSample(sample_id=0, answer="UNANSWERABLE",
                                  quote="", sentence_ids=[], claims=[])], 1
         # next-page attempt: the promoted page is now label p0
@@ -100,7 +100,7 @@ def test_next_page_retry_promotes_second_page(monkeypatch, tmp_path):
                         str(tmp_path / "work"), reader_mode="live", n_samples=1,
                         grounding="span", gate="none")
 
-    assert calls["n"] == 3
+    assert calls["n"] == 2  # original + next-page retry (no passage retry)
     assert not r["abstained"]
     assert r["answer"] == "in June"
     pro = r["retrieval_debug"]["primary_promoted"]

@@ -135,3 +135,73 @@ def test_equivalent_correct_norm_units():
     assert equivalent_correct_norm("12.5 bn", ["12.5 million"]) is False
     assert equivalent_f1_norm("47%", ["47 percent"]) == 1.0
     assert equivalent_f1_norm("x", []) == 0.0
+
+
+def test_verified_stats_run9():
+    from vvrag.eval.metrics import verified_stats
+
+    rows = [
+        {"state": "verified", "equiv_correct": True,
+         "pred_boxes": [(0, 0, 1, 1)], "examiner": {"confirmed": True}},
+        {"state": "verified", "equiv_correct": False,
+         "examiner": {"confirmed": True}},
+        {"state": "not_confident", "equiv_correct": False,
+         "abstained": False, "pred_sentence_ids": [3]},
+        {"state": "nothing_found", "equiv_correct": False, "abstained": True},
+        {"state": "nothing_found", "unanswerable": True, "equiv_correct": True},
+        {"state": "verified", "unanswerable": True, "equiv_correct": False},
+        {"error": "boom"},
+    ]
+    st = verified_stats(rows)
+    assert st["n_gold"] == 4 and st["n_probes"] == 2
+    assert st["n_verified"] == 2
+    assert st["verified_precision"] == 0.5          # 1 correct of 2 verified
+    assert st["flag_recall"] == 2 / 3               # 2 of 3 wrong flagged
+    assert st["unflagged_wrong_rate"] == 1 / 3
+    assert st["answer_coverage"] == 0.75
+    assert st["source_accuracy"] == 2 / 3           # boxes + sentence refs
+    assert st["examiner_leniency"] == 0.5           # 1 of 2 confirmed is wrong
+    assert st["probe_flag_rate"] == 0.5
+    assert st["false_verified_on_probes"] == 0.5
+    empty = verified_stats([])
+    assert empty["verified_precision"] is None and empty["n_gold"] == 0
+
+
+def test_verified_stats_examiner_only_subset():
+    from vvrag.eval.metrics import verified_stats
+
+    rows = [
+        {"state": "verified", "equiv_correct": True, "examiner_ran": True,
+         "pred_boxes": [(0, 0, 1, 1)], "examiner": {"confirmed": True}},
+        {"state": "not_confident", "equiv_correct": True,
+         "examiner_ran": False},
+        {"state": "not_confident", "equiv_correct": False,
+         "examiner_ran": False},
+        {"state": "not_confident", "equiv_correct": False,
+         "examiner_ran": True, "examiner": {"confirmed": False}},
+        {"state": "nothing_found", "equiv_correct": False, "abstained": True,
+         "examiner_ran": False},
+        {"state": "nothing_found", "unanswerable": True, "equiv_correct": False,
+         "examiner_ran": False},
+    ]
+    st = verified_stats(rows, examiner_only=True)
+    assert st["n_gold"] == 5
+    assert st["n_gold_examinable"] == 2
+    assert st["n_examiner_unavailable"] == 3
+    assert st["n_verified"] == 1
+    assert st["verified_precision"] == 1.0
+    assert st["verified_precision_cp95"] is not None
+    assert st["flag_recall"] == 1.0          # the one examinable wrong row
+    assert st["unflagged_wrong_rate"] == 0.0
+    assert st["answer_coverage"] == 0.8      # 4 of 5 gold rows are shown
+    assert st["source_accuracy"] == 0.25     # 1 of 4 shown rows has boxes
+    assert st["examiner_leniency"] == 0.0    # the confirmed row is correct
+    # Probes stay on the full probe set: a never-shown probe needs no examiner.
+    assert st["n_probes"] == 1
+    assert st["probe_flag_rate"] == 1.0
+    assert st["false_verified_on_probes"] == 0.0
+
+    all_st = verified_stats(rows)
+    assert all_st["n_gold_examinable"] == 5
+    assert all_st["n_examiner_unavailable"] == 0
+    assert all_st["answer_coverage"] == 0.8  # 4 of 5 gold rows are shown

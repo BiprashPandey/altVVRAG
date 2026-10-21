@@ -53,22 +53,24 @@ def test_features_missing_entail_encoding():
                        heat_concentration=0.7, n_claims=2, crop_has_text=False)
     assert f.entail_prob == 0.5 and not f.crop_has_text
     assert to_vector(f) == [1.0, 0.5, 0.5, 0.7, 2.0, 0.0, 0.0, 0.0, 0.0,
-                            1.0, 1.0, 0.0, 1.0, 1.0, 1.0]
+                            1.0, 1.0, 0.0, 1.0, 1.0, 0.0, 0.5, 0.5, 1.0]
     assert FEATURE_ORDER == ["agreement", "entail_prob", "retrieval_margin",
                              "heat_concentration", "n_claims", "crop_has_text",
                              "localize_score", "evidence_valid", "quote_match",
                              "answer_supported", "cited_is_top1", "visual_margin",
-                             "citation_resolved", "answer_type_match", "support_type"]
+                             "citation_resolved", "support_type", "examiner_ran",
+                             "examiner_supported", "quote_seen_match", "details_ok"]
     g = build_features(agreement=1.0, entail_min=0.9, heat_concentration=0.5,
                        localize_score=1.0, evidence_valid=True, quote_match=0.9)
     v = to_vector(g)
     assert v[6:9] == [1.0, 1.0, 0.9]          # localize, evidence_valid, quote_match
-    assert v[-3:] == [1.0, 1.0, 1.0]          # Phase 9 defaults
-    h = build_features(agreement=0.5, citation_resolved=0.0,
-                       answer_type_match=False, support_type=0.0)
+    assert v[-4:] == [0.0, 0.5, 0.5, 1.0]     # examiner not run -> neutral defaults
+    h = build_features(agreement=0.5, citation_resolved=0.0, support_type=0.0,
+                       examiner_ran=True, examiner_supported=0.0,
+                       quote_seen_match=0.0, details_ok=0.0)
     vh = to_vector(h)
-    assert vh[-3:] == [0.0, 0.0, 0.0]
-    assert to_vector(h.to_dict())[-3:] == [0.0, 0.0, 0.0]  # dict input path
+    assert vh[-4:] == [1.0, 0.0, 0.0, 0.0]
+    assert to_vector(h.to_dict())[-4:] == [1.0, 0.0, 0.0, 0.0]  # dict input path
 
 
 def test_minimal_entailing_span_shrinks():

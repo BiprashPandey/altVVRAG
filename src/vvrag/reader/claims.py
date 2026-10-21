@@ -195,6 +195,52 @@ def parse_reader_output_ext(
     return answer, quote, top_ids, top_refs, region, claims, True
 
 
+def parse_reader_output_v2(raw: str, max_claims: int = 5) -> dict:
+    """Run 9 (guideline s4.2/s6): full parse incl. no_evidence/found_in/confidence.
+
+    Returns a dict (JSON-able): answer, quote, sentence_ids, sentence_refs,
+    region, claims, ok, no_evidence, found_in, confidence. `no_evidence` is
+    forced True when the answer is UNANSWERABLE (legacy outputs). Invalid JSON
+    -> ok=False with UNANSWERABLE.
+    """
+    answer, quote, ids, refs, region, claims, ok = parse_reader_output_ext(
+        raw, max_claims)
+    no_evidence = False
+    found_in = ""
+    confidence: float | None = None
+    if ok:
+        text = raw.strip()
+        if text.startswith("```"):
+            text = "\n".join(
+                ln for ln in text.splitlines()
+                if not ln.strip().startswith("```")).strip()
+        try:
+            obj = json.loads(text)
+        except (json.JSONDecodeError, AttributeError):
+            obj = {}
+        if isinstance(obj, dict):
+            no_evidence = bool(obj.get("no_evidence", False))
+            found_in = str(obj.get("found_in", "") or "")
+            c = obj.get("confidence")
+            if isinstance(c, (int, float)) and not isinstance(c, bool):
+                confidence = max(0.0, min(1.0, float(c)))
+    if str(answer).strip().upper() in ("UNANSWERABLE", "NO EVIDENCE", ""):
+        if str(answer).strip().upper() == "UNANSWERABLE":
+            no_evidence = True
+    return {
+        "answer": answer,
+        "quote": quote,
+        "sentence_ids": ids,
+        "sentence_refs": refs,
+        "region": region,
+        "claims": claims,
+        "ok": ok,
+        "no_evidence": no_evidence,
+        "found_in": found_in,
+        "confidence": confidence,
+    }
+
+
 def validate_sentence_ids(ids: list[int] | None, n_sentences: int) -> tuple[bool, bool]:
     """Check reader-returned sentence ids against the page's sentence units.
 

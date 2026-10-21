@@ -64,13 +64,16 @@ img.ev{max-width:100%;border:1px solid #ddd;border-radius:6px;margin-top:8px}
 <button onclick="ask()">Ask</button> <span id="ask_msg" class="small"></span>
 <div id="result"></div></div>
 
-<p class="small">Pipeline: retrieval is <b>keyword overlap</b> (never abstains; the MaxSim query
-encoder runs on GPU only) &rarr; the reader is shown <b>numbered sentences</b> and cites
-<code>sentence_ids</code> + a verbatim <code>quote</code> &rarr; a <b>deterministic quote check</b>
-(no model) + statement NLI verify the citation &rarr; the confidence gate decides; boxes are drawn on
-the <b>cited sentences only</b> (else "not found in this document", with closest passages).
-Gate "calibrated/conformal" uses <code>data/gate/scorer.pkl</code> + <code>tau.json</code> from
-<code>python scripts/calibrate_gate.py</code>. Full numbers: <code>python -m vvrag.eval.run_eval --all</code>.</p>
+<p class="small">Pipeline: retrieval (<b>keyword | visual | hybrid</b>; never abstains) &rarr; the reader
+is shown <b>numbered sentences</b> and always answers with <code>quote</code> +
+<code>sentence_ids</code> + <code>found_in</code> + <code>confidence</code> &rarr; a <b>deterministic
+quote check</b> + <b>question-detail check</b> &rarr; an <b>independent examiner</b> (different
+provider) is shown the claim and must find the quote itself &rarr; states:
+<b>Verified</b> (examiner confirmed + quote in cited text + details present + citation resolved),
+<b>Not confident enough</b> (answer still shown, with the reason), or <b>Nothing found</b> (only when
+the reader truly saw nothing). Source boxes are always drawn on the cited sentences/region.
+Score/tau are displayed confidence only. Gate "calibrated/conformal" uses
+<code>data/gate/scorer.pkl</code> + <code>tau.json</code> from <code>python scripts/calibrate_gate.py</code>.</p>
 
 <script>
 async function jget(u){const r=await fetch(u);return r.json()}
@@ -132,28 +135,36 @@ async function ask(){
 }
 function render(r){
  const ev=r.evidence||{};
- const cls=r.abstained?'bad':'ok';
- const scoreBadge=r.abstained
-  ?`<span class="badge" title="confidence score vs the abstain threshold">score ${r.score}${r.gate_mode&&r.gate_mode!=='none'?(' / tau '+r.tau):''}</span>`
-  :`<span class="badge ok">score ${r.score}${r.gate_mode&&r.gate_mode!=='none'?(' / tau '+r.tau):''}</span>`;
- let html=`<h3>Answer <span class="badge ${cls}">${r.abstained?'NOT FOUND':'ANSWERED'}</span> ${scoreBadge}</h3>`;
- if(r.abstained){
-  html+=`<p class="badge warn">Not found in this document.</p>`;
-  if(r.abstain_reason)html+=`<p class="small">reason: ${esc(r.abstain_reason)}</p>`;
+ // Run 9: three states -- verified | not_confident | nothing_found.
+ // Legacy rows (no r.state) map from the old verified/abstained flags.
+ let state=r.state||(r.abstained?'nothing_found':(r.verified?'verified':'not_confident'));
+ const label=r.state_label||({verified:'Verified',not_confident:'Not confident enough',nothing_found:'Nothing found'}[state]);
+ const cls=state==='verified'?'ok':(state==='nothing_found'?'bad':'warn');
+ const scoreBadge=`<span class="badge${state==='verified'?' ok':''}" title="confidence score (display only; the state is decided by the examiner rules)">score ${r.score}${r.gate_mode&&r.gate_mode!=='none'?(' / tau '+r.tau):''}</span>`;
+ let html=`<h3>Answer <span class="badge ${cls}">${esc(label)}</span> ${scoreBadge}</h3>`;
+ if(state==='nothing_found'){
+  html+=`<p class="badge bad">${esc(r.nothing_found_text||'Nothing found in this document.')}</p>`;
+  if(r.state_reason||r.abstain_reason)html+=`<p class="small">reason: ${esc(r.state_reason||r.abstain_reason)}</p>`;
   if((r.closest_passages||[]).length){
    html+=`<p class="small"><b>Closest passages:</b></p><ul>`;
    for(const p of r.closest_passages){html+=`<li>${esc(p.text).slice(0,240)} <span class="small">(score ${p.score})</span></li>`}
    html+=`</ul>`;
   }
  } else {
-  const tierOk=r.tier==='text'||r.verified===true;
-  const vBadge=tierOk?'':(r.tier==='visual'
-   ?'<span class="badge warn" title="answer shown by a visual region; confirmed by an independent cross-family check (not a verbatim text quote)">not text-verified (visual region)</span>'
-   :'<span class="badge warn" title="answer not contained in / entailed by the cited text">evidence unverified</span>');
-  html+=`<p><b>${esc(r.answer)}</b> ${vBadge}</p>`;
+  const ok=state==='verified';
+  const suffix=ok?'':` <span class="small">${esc(r.low_confidence_suffix||'(not confident enough)')}</span>`;
+  html+=`<p><b>${esc(r.answer)}</b>${suffix}</p>`;
+  if(!ok&&r.state_reason)html+=`<p class="small">why not verified: ${esc(r.state_reason)}</p>`;
   const quote=(r.samples&&r.samples[0]&&r.samples[0].quote)||'';
   if(quote)html+=`<p class="small"><b>quote:</b> \u201c${esc(quote)}\u201d</p>`;
-  if(r.support&&r.support.require)html+=`<p class="small">answer-support: ${esc(r.support.method)} (score ${r.support.score})</p>`;
+  const ex=r.examiner||{};
+  if(ex.ran)html+=`<p class="small">examiner: ${esc(ex.served_by||'')} -- ${ex.confirmed?'confirmed':'not confirmed'}${ex.quote_seen?('; saw \u201c'+esc(String(ex.quote_seen)).slice(0,120)+'\u201d'):''}${ex.problem?('; '+esc(ex.problem)):''}</p>`;
+  else if(ex.error)html+=`<p class="small">examiner: could not run (${esc(ex.error)})</p>`;
+  if(r.reader_served_by)html+=`<p class="small">reader: ${esc(r.reader_served_by)}${r.independence_ok===false?' <span class="badge bad">not independent</span>':''}</p>`;
+  const dw=(r.details&&r.details.warnings)||[];
+  if(dw.length)html+=`<p class="small">question details: ${esc(dw[0])}</p>`;
+  const sw=(r.support&&r.support.warnings)||[];
+  if(sw.length)html+=`<p class="small">${esc(sw[0])}</p>`;
   if(r.citations&&r.citations.status&&r.citations.status!=='none'&&r.citations.status!=='ok')
    html+=`<p class="small">citations: ${esc(r.citations.status)} (${r.citations.n_resolved}/${r.citations.n_refs} resolved)</p>`;
  }

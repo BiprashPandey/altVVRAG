@@ -81,6 +81,12 @@ def main() -> None:
                 "abstained": bool(r["abstained"]), "score": r.get("score"),
                 "features": r.get("features"), "abstain_reason": r.get("abstain_reason"),
                 "verified": r.get("verified"), "support": r.get("support"),
+                # Run 9: the three-state contract + who served each role
+                "state": r.get("state"), "state_reason": r.get("state_reason"),
+                "not_confident": bool(r.get("not_confident")),
+                "reader_served_by": r.get("reader_served_by"),
+                "examiner_served_by": r.get("examiner_served_by"),
+                "examiner": r.get("examiner"), "details": r.get("details"),
                 "retrieval": r.get("retrieval_debug"),
             }
             rows.append(row)

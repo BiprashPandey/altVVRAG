@@ -23,11 +23,17 @@ class RetrieverConfig:
     pooling: str = "row_col_mean"
     query_encoder: str = "colqwen"
     # Phase 1 (2026-10-18): keyword | visual | hybrid page ranking.
-    # "keyword" preserves the pre-Run-7 behavior; the UI/run harnesses can
-    # override per call. `rrf_k` is the reciprocal-rank-fusion constant.
-    retrieval_mode: str = "keyword"
+    # Run 9 (guideline s4.6): hybrid is the default; a cache miss is encoded
+    # online by the text-side ColQwen encoder when the laptop GPU is ready,
+    # otherwise the call falls back to keyword with an honest note.
+    retrieval_mode: str = "hybrid"
     rrf_k: int = 60
     query_vectors_dir: str = "data/query_cache"
+    online_encoder: bool = True
+    online_encoder_device: str = "cuda"
+    rerank: bool = True
+    rerank_top_k: int = 5
+    bridge_resolution: bool = True
 
 
 @dataclass
@@ -48,8 +54,9 @@ class ReaderConfig:
     max_claims: int = 5
     fallback_provider: str = ""
     fallback_model: str = ""
-    # suggestion #7: reduce false abstentions on noisy OCR
-    retry_on_unanswerable: bool = True
+    # Run 9 (guideline s4.2): the reader always answers; UNANSWERABLE is
+    # reserved for "nothing at all", so the passage retry is off by default.
+    retry_on_unanswerable: bool = False
     unanswerable_retry_overlap: float = 0.2
     max_answer_retries: int = 1
     # Phase 2: multi-page reading (top-k pages in the prompt; primary has images)
@@ -66,10 +73,30 @@ class VerifyConfig:
     # cited text or be entailed by it, else the evidence is not "verified").
     require_answer_support: bool = False
     support_entail_threshold: float = 0.5
-    # Phase 9 (Run 8): question-aware checks
-    answer_type_check: bool = True       # "how many" needs a number, ...
-    comparison_check: bool = True        # comparisons need both values cited
-    # Visual middle tier: "off" | "agreement" | "cross_family"
+    # Run 9 (guideline s4.1): question-aware checks become WARNINGS; they
+    # never veto an answer. "off" | "warn" | "block" (block only kept for
+    # reproducibility of older experiments).
+    answer_type_check: bool = False       # removed from the gate (s4.1)
+    comparison_check: str = "warn"        # bool True/False accepted too
+    question_detail_check: str = "warn"   # years/dates/units/named entities
+    # Examiner (guideline s4.3): a second, different-family model is shown the
+    # claim on every answer. VERIFIED requires its confirmation. Models are
+    # tried largest-first inside the examiner family; no silent cross-family
+    # fallback (a failed examiner => not_confident).
+    mode: str = "examiner_shown"
+    examiner_provider: str = "groq"
+    examiner_models: list = field(default_factory=lambda: [
+        "qwen/qwen3.8-27b",
+        "meta-llama/llama-4-maverick-17b-128e-instruct",
+        "meta-llama/llama-4-scout-17b-16e-instruct",
+    ])
+    examiner_max_tokens: int = 700
+    examiner_temperature: float = 0.0
+    examiner_quote_threshold: float = 0.6
+    examiner_on_every_answer: bool = True
+    independence_required: bool = True
+    log_served_by: bool = True
+    # Legacy cross-family fields (kept so older configs/tests still load).
     visual_tier: str = "cross_family"
     visual_min_agreement: float = 0.66
     cross_family_provider: str = "groq"
@@ -85,6 +112,10 @@ class RunConfig:
         "gemini-3.1-flash-lite", "gemini-3.7-flash",
     ])
     reader_model_pinned: str = ""
+    # Run 9 (guideline s4.8): no silent model switching; quota => wait/retry
+    # the same model, and flag the row. Opt-in rotation is for debugging only.
+    allow_model_rotation: bool = False
+    reader_max_wait_s: float = 900.0
 
 
 @dataclass
@@ -114,6 +145,25 @@ class GateConfig:
 
 
 @dataclass
+class OutputConfig:
+    """Run 9 (guideline s5): the three-state answer contract."""
+    always_show_answer: bool = True
+    low_confidence_suffix: str = "(not confident enough)"
+    always_show_source: bool = True
+    nothing_found_text: str = "Nothing found in this document."
+    verified_label: str = "Verified"
+    not_confident_label: str = "Not confident enough"
+    nothing_found_label: str = "Nothing found"
+
+
+@dataclass
+class IngestConfig:
+    """Run 9 (guideline s4.5): table-aware units + VLM transcription."""
+    table_cells: bool = True
+    vlm_transcribe_empty: bool = False
+
+
+@dataclass
 class RatelimitConfig:
     requests_per_minute: int = 10
     max_retries: int = 6
@@ -137,6 +187,8 @@ class AppConfig:
     verify: VerifyConfig = field(default_factory=VerifyConfig)
     ground: GroundConfig = field(default_factory=GroundConfig)
     gate: GateConfig = field(default_factory=GateConfig)
+    output: OutputConfig = field(default_factory=OutputConfig)
+    ingest: IngestConfig = field(default_factory=IngestConfig)
     ratelimit: RatelimitConfig = field(default_factory=RatelimitConfig)
     eval: EvalConfig = field(default_factory=EvalConfig)
     run: RunConfig = field(default_factory=RunConfig)
@@ -179,6 +231,8 @@ def load_config(config_path: str | Path = "config.yaml", dotenv_path: str | Path
         verify=VerifyConfig(**data.get("verify", {})),
         ground=GroundConfig(**data.get("ground", {})),
         gate=GateConfig(**data.get("gate", {})),
+        output=OutputConfig(**data.get("output", {})),
+        ingest=IngestConfig(**data.get("ingest", {})),
         ratelimit=RatelimitConfig(**data.get("ratelimit", {})),
         eval=EvalConfig(**data.get("eval", {})),
         run=RunConfig(**data.get("run", {})),

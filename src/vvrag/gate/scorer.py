@@ -18,23 +18,44 @@ def hand_weighted(agreement: float, entail_prob: float | None,
                    heat_concentration: float,
                    localize_score: float = 0.0,
                    evidence_valid: bool = False,
-                   quote_match: float = 0.0) -> float:
+                   quote_match: float = 0.0,
+                   examiner_ran: bool | float | None = None,
+                   examiner_supported: float | None = None,
+                   quote_seen_match: float | None = None,
+                   details_ok: float | None = None) -> float:
     """Hand-weighted confidence (rec 6: localization is a gate signal).
 
-    New kwargs default to 0/False so old 3-arg calls keep working; the
-    learned scorer picks up the new columns via FEATURE_ORDER automatically.
-    `quote_match` (suggestion #4) is a deterministic verifier signal, so it
-    carries real weight.
+    Legacy 6-arg calls keep the exact old formula. When any Run 9 examiner
+    kwarg is provided (guideline s4.7: the examiner's verdict is the strongest
+    feature), the 1.0-normalized formula below is used instead.
     """
     entail = 0.5 if entail_prob is None else entail_prob
-    base = float(0.25 * agreement + 0.25 * entail + 0.10 * heat_concentration
-                 + 0.20 * float(localize_score or 0.0)
-                 + 0.20 * float(quote_match or 0.0))
+    if (examiner_ran is None and examiner_supported is None
+            and quote_seen_match is None and details_ok is None):
+        base = float(0.25 * agreement + 0.25 * entail + 0.10 * heat_concentration
+                     + 0.20 * float(localize_score or 0.0)
+                     + 0.20 * float(quote_match or 0.0))
+        if evidence_valid:
+            base += 0.05
+        else:
+            base -= 0.05
+        return float(max(0.0, min(1.0, base)))
+    ran = 1.0 if examiner_ran else 0.0
+    ex = 0.5 if examiner_supported is None else float(examiner_supported)
+    qs = 0.5 if quote_seen_match is None else float(quote_seen_match)
+    det = 1.0 if details_ok is None else float(details_ok)
+    base = float(0.15 * agreement + 0.10 * entail + 0.05 * heat_concentration
+                 + 0.10 * float(localize_score or 0.0)
+                 + 0.15 * float(quote_match or 0.0)
+                 + 0.30 * ex * ran
+                 + 0.10 * qs * ran
+                 + 0.05 * det)
     if evidence_valid:
         base += 0.05
     else:
         base -= 0.05
     return float(max(0.0, min(1.0, base)))
+
 
 
 class LogisticScorer:

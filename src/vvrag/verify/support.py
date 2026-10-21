@@ -196,3 +196,79 @@ def qa_support(question: str, answer: str, texts: list[str],
             return True, float(entail_min), "entail+type"
         return False, float(entail_min), "nli_low"
     return False, 0.0, "no_nli"
+
+
+# ---------------------------------------------------------------------------
+# Run 9 (guideline s4.1/s4.4): warnings, never vetoes.
+# The answer-type and comparison checks stay as diagnostics: they are surfaced
+# in the result and in the UI, but only "block" mode (legacy experiments) is
+# allowed to veto. The strictness now lives in the examiner + examiner rules.
+# ---------------------------------------------------------------------------
+
+def _mode(value, default: str = "warn") -> str:
+    """Accept bool/str config values -> off|warn|block."""
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return "block" if value else "off"
+    v = str(value).strip().lower()
+    if v in ("1", "true", "on", "yes", "block"):
+        return "block"
+    if v in ("0", "false", "off", "no", "none"):
+        return "off"
+    return "warn"
+
+
+def qa_support_report(
+    question: str,
+    answer: str,
+    texts: list[str],
+    entail_min: float | None = None,
+    entail_threshold: float = 0.5,
+    type_check=False,
+    comparison_check="warn",
+) -> tuple[bool, float, str, list[str]]:
+    """Support verdict + non-fatal warnings (Run 9).
+
+    Returns (supported, score, method, warnings). Question-aware checks are
+    warnings by default; pass type_check=True / comparison_check="block" to
+    restore the old veto behavior. `method` distinguishes the veto reasons.
+    """
+    warnings: list[str] = []
+    a = normalize_numbers(answer)
+    if not a or a == "unanswerable":
+        return False, 0.0, "empty", warnings
+    tmode = _mode(type_check, "warn") if type_check is not False else "off"
+    cmode = _mode(comparison_check, "warn")
+    if question and tmode != "off":
+        match = answer_type_match(question, answer)
+        if match is False:
+            msg = (f"the answer looks like a {answer_kind(question)} question "
+                   f"but '{answer}' is not a {answer_kind(question)}")
+            if tmode == "block":
+                return False, float(entail_min or 0.0), "type_mismatch", warnings
+            warnings.append(msg)
+    if question and cmode != "off" and is_comparison(question):
+        if not comparison_values_present(question, answer, texts):
+            msg = "the values being compared are not both in the cited text"
+            if cmode == "block":
+                return False, float(entail_min or 0.0), "missing_comparison_values", warnings
+            warnings.append(msg)
+    joined = normalize_numbers(" ".join(texts or []))
+    if joined and a in joined:
+        return True, 1.0, "containment+type", warnings
+    if entail_min is not None:
+        if entail_min >= entail_threshold:
+            return True, float(entail_min), "entail+type", warnings
+        return False, float(entail_min), "nli_low", warnings
+    return False, 0.0, "no_nli", warnings
+
+
+def answer_kind_label(question: str) -> str:
+    """Human label for the expected answer type (UI/telemetry)."""
+    kind = answer_kind(question)
+    return {
+        "percent": "percentage", "year": "year", "date": "date",
+        "count": "number", "money": "amount", "name": "name",
+        "location": "place", "other": "value",
+    }.get(kind, "value")

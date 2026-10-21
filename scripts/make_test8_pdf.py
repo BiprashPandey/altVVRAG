@@ -23,7 +23,7 @@ REPO = Path(__file__).resolve().parent.parent
 _cands = sorted((REPO / 'results' / 'demo').glob('testrun8_*'),
                 key=lambda p: p.stat().st_mtime)
 RUN = Path(sys.argv[1]) if len(sys.argv) > 1 else (_cands[-1] if _cands else None)
-OUT = Path(sys.argv[2]) if len(sys.argv) > 2 else REPO / 'testRun8.pdf'
+OUT = Path(sys.argv[2]) if len(sys.argv) > 2 else None
 INDEX = REPO / 'data' / 'index'
 GOLD = REPO / 'data' / 'gold.json'
 PROBES_JSON = REPO / 'data' / 'gold_unanswerable.json'
@@ -146,12 +146,27 @@ con.close()
 # ---- cells ----
 ok = [r for r in rows if 'error' not in r]
 errs = [r for r in rows if 'error' in r]
+RUN9 = any(r.get('state') for r in ok)
+if OUT is None:
+    OUT = REPO / ('testRun9.pdf' if RUN9 else 'testRun8.pdf')
+TITLE = 'Test Run 9' if RUN9 else 'Test Run 8'
 cells = sorted({(r.get('arm'), r.get('model')) for r in ok})
 cell_rows = {c: [r for r in ok if (r.get('arm'), r.get('model')) == c]
              for c in cells}
 MODEL_A = cells[0][1] if cells else '?'
+_hyb_path = REPO / 'results' / 'run8_hybrid_items.json'
+HYB_ITEMS = (json.loads(_hyb_path.read_text(encoding='utf-8'))
+             if _hyb_path.exists() else [])
+expected_keyword = len(golds) + len(probe_specs)
+expected_hybrid = len(HYB_ITEMS)
+err_by_cell = Counter((r.get('arm'), r.get('model')) for r in errs)
 
-from vvrag.eval.metrics import clopper_pearson_interval  # noqa: E402
+
+def expected_for(arm):
+    return expected_hybrid if arm == 'hybrid' else expected_keyword
+
+from vvrag.eval.metrics import (clopper_pearson_interval,  # noqa: E402
+                                verified_stats)
 
 
 def cell_stats(rs):
@@ -183,6 +198,12 @@ def cell_stats(rs):
         st['probe_false'] = len(probes) - k
     return st
 
+
+def short_model(m):
+    """Compact model label for narrow table cells (fits without ellipsis)."""
+    if not m:
+        return '?'
+    return str(m).replace('gemini-', 'g-')
 
 stats = {c: cell_stats(rs) for c, rs in cell_rows.items()}
 arm_model_names = [f'{a}|{m}' for a, m in cells]
@@ -238,8 +259,12 @@ def row_by(qid, arm, model):
 
 
 story = []
-story.append(P('Test Run 8 — arm x model matrix: strict verification, visual '
-               'tier, hybrid retrieval, 41 unanswerable probes', H1))
+if RUN9:
+    story.append(P('Test Run 9 — answer, verify, show the source: three-state '
+                   'contract, independent examiner, 18-column gate', H1))
+else:
+    story.append(P('Test Run 8 — arm x model matrix: strict verification, '
+                   'visual tier, hybrid retrieval, 41 unanswerable probes', H1))
 _n_hyb_sel = len([r for r in hyb if r.get('unanswerable') is False])
 _hyb_desc = (f"<b>hybrid arm x model A x {_n_hyb_sel} selected items</b>"
              if hyb else
@@ -251,15 +276,52 @@ story.append(P(
     f"<b>{len(docs)} SlideVQA decks, {n_pages} pages, {n_words:,} OCR word "
     f"boxes, {n_sents:,} sentences, {n_embeds} ColQwen page vectors</b>. "
     f"Matrix: <b>keyword arm x {len([m for a, m in cells if a == 'keyword'])} "
-    f"pinned models x {len(kw_a)} items (40 gold + 41 probes)</b> plus "
+    f"pinned models x {expected_keyword} items (40 gold + 41 probes)</b> plus "
     f"{_hyb_desc} = <b>{len(rows)} rows</b>, grounding=<b>span</b>, "
-    f"gate=<b>calibrated</b> (tau={tau_meta.get('tau')}) with hard support "
-    f"veto, retrieval modes used: {modes_used}. Row-level result: "
+    f"gate=<b>calibrated</b> (tau={float(tau_meta.get('tau', 0)):.3f}) with "
+    f"hard support veto, retrieval modes used: {modes_used}. Row-level result: "
     f"<b>{RUN.name}/rows.json</b> ({len(rows)} rows, {len(errs)} errors).",
     BODY))
+_status = (f'Run status: <b>{len(ok)}/{len(rows)}</b> rows completed; '
+           f'<b>{len(errs)}</b> resumable errors/PENDING.')
+_incomplete = []
+for c in cells:
+    exp = expected_for(c[0])
+    done = len(cell_rows[c])
+    if done < exp:
+        _incomplete.append(f'{c[0]}|{c[1]} {done}/{exp} '
+                           f'({err_by_cell.get(c, 0)} errors)')
+if _incomplete:
+    _status += (' <b>INCOMPLETE CELLS:</b> ' + '; '.join(_incomplete) + '.')
+else:
+    _status += ' Every cell is complete.'
+story.append(P(_status, BODY))
 story.append(Spacer(1, 4))
 
-story.append(P('1. What testRun8 adds over testRun7', H2))
+if RUN9:
+    story.append(P('1. What Run 9 adds over Run 8', H2))
+    story.append(P(
+        '1. <b>Three-state contract</b>: VERIFIED (examiner confirmed + quote '
+        'seen on page + question details present + citations resolved + '
+        'independent examiner ran); NOT CONFIDENT ENOUGH (answer shown with a '
+        'suffix and a state_reason); NOTHING FOUND (the only no-answer state). '
+        'The gate never causes abstention.<br/>'
+        '2. <b>Independent examiner on every answer</b>: a cross-family Groq '
+        'vision model sees the claim + evidence image and returns a verdict; '
+        'examiner unavailable =&gt; not_confident, never a silent pass.<br/>'
+        '3. <b>Question-detail grounding</b>: years/dates/units/entities from '
+        'the question are checked against the cited sentences and the whole '
+        'corpus; missing details block VERIFIED but never hide the answer.<br/>'
+        '4. <b>18-column gate</b> (examiner_ran, examiner_supported, '
+        'quote_seen_match, details_ok added) refit on runs 5-9 labels.<br/>'
+        '5. <b>Run 9 metrics</b>: verified precision, flag recall, unflagged '
+        'wrong, coverage, source accuracy, examiner leniency, probe flag rate, '
+        'and false-verified-on-probes, with examiner-only denominators.<br/>'
+        '6. <b>Retrieval/table additions</b>: lexical rerank, bridge pages, '
+        'online-encoder guard, and table row/cell citation units.', BODY))
+    story.append(P('Run 8 features retained in this matrix:', H3))
+else:
+    story.append(P('1. What testRun8 adds over testRun7', H2))
 story.append(P(
     '1. <b>Citation-resolution honesty</b>: reader refs that do not resolve on '
     'the shown pages are reported and veto the answer (no silent rebinding to '
@@ -359,14 +421,21 @@ story.append(P('shown = answer displayed and correct (any tier); strict = answer
 story.append(Spacer(1, 2))
 pdata = [[P('<b>probe</b>', CELLH), P('<b>category</b>', CELLH),
           P('<b>question</b>', CELLH), P('<b>check tokens (absent)</b>', CELLH)]
-         + [P(f'<b>M{i + 1}</b>', CELLH) for i, m in enumerate(kw_models)]]
+         + [P(f'<b>{esc(short_model(m), 14)}</b>', CELLH) for m in kw_models]]
 for r in sorted([r for r in ok if r.get('unanswerable')], key=lambda r: r['idx']):
     spec = next((p for p in probe_specs if p['qid'] == r['qid']), {})
     answers = []
     for m in kw_models:
         rr = row_by(r['qid'], 'keyword', m)
-        answers.append(P('Y' if rr and rr.get('abstained')
-                         else f"<b>N: {esc((rr or {}).get('answer'), 18)}</b>", CELL))
+        if rr and rr.get('abstained'):
+            _lbl = 'NF'  # nothing found (hard abstain)
+        elif rr and rr.get('not_confident'):
+            _lbl = 'NC'  # shown with the not-confident-enough label: flagged
+        elif rr:
+            _lbl = f"<b>N: {esc((rr or {}).get('answer'), 18)}</b>"
+        else:
+            _lbl = '?'
+        answers.append(P(_lbl, CELL))
     pdata.append([P(esc(r['qid'], 10), CELL),
                   P(esc(spec.get('probe_category', r.get('probe_category')), 17), CELL),
                   P(esc(r['question'], 64), CELL),
@@ -408,6 +477,12 @@ story.append(P('strict = headline metric (text-verified only): '
                'are nonetheless incorrect; shown-wrong-unverified (any cell) = '
                + str({f'{a}|{m}': stats[(a, m)]['shown_wrong_unverified']
                       for a, m in cells}) + '.', SMALL))
+if RUN9:
+    story.append(P('Run 9: <b>false abst.</b> is the nothing_found rate on '
+                   'gold rows; not_confident answers are shown and counted as '
+                   'answered. <b>strict</b> is the verified state (examiner '
+                   'confirmed + quote + details + citations + independence).',
+                   SMALL))
 story.append(Spacer(1, 2))
 story.append(P('By category and probe type:', H3))
 cdata = [[P('<b>category</b>', CELLH)] + [P(f'<b>{a}|{m}: n / shown / strict</b>', CELLH)
@@ -446,6 +521,157 @@ for cat in sorted(pcats):
 story.append(table(pdata2, widths=[34 * mm] + [44 * mm] * len(cells) + [30 * mm]))
 story.append(Spacer(1, 3))
 
+state_hist = dict(Counter(r.get('state') or ('abstained' if r.get('abstained')
+                                                 else 'answered')
+                                for r in ok))
+ex_hist = dict(Counter(r.get('examiner_served_by') or 'none' for r in ok))
+story.append(P('4b. Run 9 three-state contract (verified / not confident '
+               'enough / nothing found)', H3))
+story.append(P(f"State histogram over all {len(ok)} completed rows: "
+               f"<b>{state_hist}</b>. Examiner served by: <b>{ex_hist}</b> "
+               f"(mock/examiner = offline mock; empty = examiner could not "
+               f"run). VERIFIED = examiner confirmed AND quote seen on page "
+               f"AND details ok AND citations resolved AND independence ok. "
+               f"not_confident = shown with the suffix and the reason; "
+               f"nothing_found = no answer shown.", BODY))
+
+r9_cells = {c: verified_stats(rs, examiner_only=True)
+            for c, rs in cell_rows.items()}
+
+
+def _f9(v):
+    if isinstance(v, float):
+        return f'{v:.3f}'
+    return 'n/a' if v is None else str(v)
+
+
+if r9_cells:
+    adata = [[P('<b>cell</b>', CELLH),
+              P('<b>gold examinable/total</b>', CELLH),
+              P('<b>no examiner</b>', CELLH),
+              P('<b>verified n</b>', CELLH),
+              P('<b>verified precision [CP95]</b>', CELLH),
+              P('<b>examiner leniency</b>', CELLH)]]
+    for cname, v in r9_cells.items():
+        cp = v.get('verified_precision_cp95')
+        prec = _f9(v['verified_precision'])
+        if cp:
+            prec += f' [{cp[0]:.2f}, {cp[1]:.2f}]'
+        adata.append([
+            P(esc(f'{cname[0]}|{cname[1]}', 30), CELL),
+            P(f"{v['n_gold_examinable']}/{v['n_gold']}", CELL),
+            P(str(v['n_examiner_unavailable']), CELL),
+            P(str(v['n_verified']), CELL),
+            P(f'<b>{prec}</b>', CELL),
+            P(f"{_f9(v['examiner_leniency'])} (n={v['n_confirmed']})", CELL)])
+    story.append(table(adata, widths=[36 * mm, 28 * mm, 20 * mm, 18 * mm,
+                                      56 * mm, 30 * mm]))
+
+    bdata = [[P('<b>cell</b>', CELLH),
+              P('<b>flag recall</b>', CELLH),
+              P('<b>unflagged wrong</b>', CELLH),
+              P('<b>coverage</b>', CELLH),
+              P('<b>source acc.</b>', CELLH),
+              P('<b>probe flagged</b>', CELLH),
+              P('<b>probe false verified</b>', CELLH)]]
+    for cname, v in r9_cells.items():
+        bdata.append([
+            P(esc(f'{cname[0]}|{cname[1]}', 30), CELL),
+            P(_f9(v['flag_recall']), CELL),
+            P(_f9(v['unflagged_wrong_rate']), CELL),
+            P(_f9(v['answer_coverage']), CELL),
+            P(_f9(v['source_accuracy']), CELL),
+            P(_f9(v['probe_flag_rate']), CELL),
+            P(_f9(v['false_verified_on_probes']), CELL)])
+    story.append(table(bdata, widths=[36 * mm, 24 * mm, 28 * mm, 20 * mm,
+                                      22 * mm, 24 * mm, 32 * mm]))
+    story.append(P('Targets per guideline s8: verified precision &gt;= 95%, '
+                   'flag recall ~90%, unflagged wrong ~0, coverage up from '
+                   '0.33, probe flag rate high and <b>probe false verified = '
+                   '0</b> (the dangerous cell).', SMALL))
+    n_gold_total = sum(v['n_gold'] for v in r9_cells.values())
+    n_exam_total = sum(v['n_gold_examinable'] for v in r9_cells.values())
+    n_unavail_total = sum(v['n_examiner_unavailable']
+                          for v in r9_cells.values())
+    if n_unavail_total:
+        story.append(P(
+            f'<b>Examiner availability:</b> {n_exam_total}/{n_gold_total} gold '
+            f'rows had an examiner verdict; <b>{n_unavail_total}</b> were '
+            f'<i>not_confident</i> because the examiner could not run (Groq '
+            f'TPD/quota or provider error), not because verification failed. '
+            f'The examiner-only denominators above exclude those rows; probe '
+            f'metrics always use all probes. Rows are never counted as '
+            f'verification failures when the examiner was unavailable.', SMALL))
+    else:
+        story.append(P(f'<b>Examiner availability:</b> all {n_gold_total} gold '
+                       f'rows had an examiner verdict.', SMALL))
+story.append(Spacer(1, 3))
+
+if RUN9:
+    _vwrong = [r for r in ok
+               if r.get('state') == 'verified' and not r.get('unanswerable')
+               and not r.get('equiv_correct')]
+    _pwrong = [r for r in ok
+               if r.get('state') == 'verified' and r.get('unanswerable')]
+    story.append(P('4c. Verified-but-wrong audit (target: none)', H3))
+    if _vwrong or _pwrong:
+        story.append(P(
+            f'<b>{len(_vwrong)} gold row(s)</b> and <b>{len(_pwrong)} probe(s)</b> '
+            f'reached VERIFIED while being wrong. These are the most important '
+            f'failures: the examiner-only precision table above counts them. '
+            f'Each is listed with the examiner verdict so leniency is auditable.',
+            BODY))
+        for r in _vwrong:
+            ex = r.get('examiner') or {}
+            story.append(P(
+                f"<b>{esc(r.get('qid'), 60)}</b> | "
+                f"{esc(r.get('arm'), 10)}|{esc(r.get('model'), 30)} | "
+                f"{esc(r.get('category'), 20)} | answer "
+                f"<b>{esc(r.get('answer'), 80)}</b> | gold "
+                f"<b>{esc(r.get('gold_answer'), 80)}</b><br/>"
+                f"examiner: served_by={esc(r.get('examiner_served_by'), 40)}, "
+                f"confirmed={ex.get('confirmed')}, "
+                f"answers_the_question={ex.get('answers_the_question')}, "
+                f"quote_seen_match={ex.get('quote_seen_match')}, "
+                f"problem={esc(ex.get('problem'), 160)}<br/>"
+                f"quote: \u201c{esc(r.get('quote'), 120)}\u201d", SMALL))
+        for r in _pwrong:
+            ex = r.get('examiner') or {}
+            story.append(P(
+                f"<b>PROBE {esc(r.get('qid'), 60)}</b> | "
+                f"{esc(r.get('arm'), 10)}|{esc(r.get('model'), 30)} | answer "
+                f"<b>{esc(r.get('answer'), 80)}</b> | examiner "
+                f"served_by={esc(r.get('examiner_served_by'), 40)}, "
+                f"confirmed={ex.get('confirmed')}, "
+                f"problem={esc(ex.get('problem'), 160)}", SMALL))
+    else:
+        story.append(P('No gold row and no probe reached VERIFIED while wrong '
+                       'in this run.', BODY))
+    story.append(Spacer(1, 3))
+
+    _agg = verified_stats(ok, examiner_only=True)
+
+    def _verdict(v, target, higher=True):
+        if v is None:
+            return 'n/a'
+        passed = (v >= target) if higher else (v <= target)
+        return f"{v:.3f} ({'PASS' if passed else 'FAIL'} vs {target})"
+
+    story.append(P('4d. Run 9 verdict (aggregate over completed rows)', H3))
+    story.append(P(
+        f"Verified precision: <b>{_verdict(_agg['verified_precision'], 0.95)}"
+        f"</b> [CP95 {_agg['verified_precision_cp95']}]; flag recall: "
+        f"<b>{_verdict(_agg['flag_recall'], 0.90)}</b>; unflagged wrong: "
+        f"<b>{_verdict(_agg['unflagged_wrong_rate'], 0.0, higher=False)}</b>; "
+        f"coverage: <b>{_verdict(_agg['answer_coverage'], 0.33)}</b>; "
+        f"probe flag rate: <b>{_verdict(_agg['probe_flag_rate'], 0.90)}</b>; "
+        f"false verified on probes: "
+        f"<b>{_verdict(_agg['false_verified_on_probes'], 0.0, higher=False)}"
+        f"</b>. Examiner-ran gold rows: {_agg['n_gold_examinable']}/"
+        f"{_agg['n_gold']}; probes: {_agg['n_probes']}. Small n means wide "
+        f"intervals; these are directional, not significance claims.", BODY))
+    story.append(Spacer(1, 3))
+
 story.append(P('5. Verification diagnostics (keyword arm, gold rows)', H2))
 story.append(P(f"Citations status histogram: <b>{cit_hist}</b> "
                f"(none = reader cited nothing; unresolved/partial = vetoed "
@@ -454,7 +680,7 @@ story.append(P(f"Citations status histogram: <b>{cit_hist}</b> "
                f"<b>{len(vis_attempts)}</b> verdicts={vis_verdicts}.", BODY))
 for r0 in [r for r in ok if r.get('visual_confirm', {}).get('attempted')][:14]:
     vc = r0['visual_confirm']
-    story.append(P(f"[{r0['arm']}|{esc(r0.get('model'), 20)}] {esc(r0['question'], 90)}"
+    story.append(P(f"[{r0['arm']}|{esc(short_model(r0.get('model')), 24)}] {esc(r0['question'], 90)}"
                    f" — reader: {esc(r0.get('answer'), 30)} | region "
                    f"{'yes' if (r0.get('samples') or [{}])[0].get('region') else 'no'}"
                    f" | verdict <b>{esc(vc.get('verdict'), 12)}</b> "
@@ -556,8 +782,8 @@ story.append(P(f'Discordant gold items (one model answers / the other abstains, 
                f'model and system behaviour.', BODY))
 if disc:
     ddata = [[P('<b>#</b>', CELLH), P('<b>question</b>', CELLH),
-              P(f'<b>{esc(kw_models[0], 20)}</b>', CELLH),
-              P(f'<b>{esc(kw_models[1], 20)}</b>', CELLH),
+              P(f'<b>{esc(short_model(kw_models[0]), 24)}</b>', CELLH),
+              P(f'<b>{esc(short_model(kw_models[1]), 24)}</b>', CELLH),
               P('<b>gold</b>', CELLH)]]
     for g, ra, rb, va, vb in disc:
         ddata.append([P(esc(g['qid'][-6:], 8), CELL), P(esc(g['question'], 70), CELL),
@@ -595,10 +821,14 @@ for r0 in sorted([r for r in kw_a if not r.get('unanswerable')],
         f" | tier {r0.get('tier')}"
         f" | page_hit {r0.get('page_hit')} rank {r0.get('gold_rank') or '>5'}"
         f" | quote_ok {r0.get('quote_ok')} (q={loc.get('quote_score', '')})"
+        f" | state {r0.get('state')}"
         f" | verified {r0.get('verified')} (support {esc(sup.get('method'), 12)})"
         f" | cit {(r0.get('citations') or {}).get('status')}"
         f" | sF1 {mm1(r0.get('sent_f1'))} IoU {mm1(r0.get('iou'))}"
         f" | score {r0.get('score')} / tau {r0.get('tau')}", SMALL))
+    if r0.get('state') == 'not_confident':
+        story.append(P(f"not_confident reason: "
+                       f"{esc(r0.get('state_reason'), 180)}", SMALL))
     story.append(P(f"cited: {cited_txt} | quote: \u201c{esc(quote, 90)}\u201d", SMALL))
     if r0.get('abstained') and r0.get('closest_passages'):
         story.append(P('closest passages: '
@@ -617,7 +847,7 @@ for r0 in sorted([r for r in kw_a if not r.get('unanswerable')],
                 f"{'Y' if r_.get('equiv_verified') else 'N'}")
             note = esc(r_.get('abstain_reason') or
                        f"support {(r_.get('support') or {}).get('method')}", 60)
-            odata.append([P(f"{r_.get('arm')}|{esc(r_.get('model'), 20)}", CELL),
+            odata.append([P(f"{r_.get('arm')}|{esc(short_model(r_.get('model')), 24)}", CELL),
                           P(esc(r_.get('answer'), 26), CELL), P(tag, CELL),
                           P(esc(r_.get('tier'), 8), CELL), P(note, CELL)])
         story.append(table(odata, widths=[36 * mm, 40 * mm, 18 * mm, 12 * mm,
@@ -688,13 +918,13 @@ for k, r in enumerate(rows):
     if 'error' in r:
         tdata.append([P(str(k), CELL), P(esc(r.get('qid'), 14), CELL),
                       P(esc(r.get('arm'), 8), CELL),
-                      P(esc(r.get('model'), 20), CELL)]
+                      P(esc(short_model(r.get('model')), 24), CELL)]
                      + [P('ERROR: ' + esc(r.get('error'), 50), CELL)]
                      + [P('', CELL) for _ in range(11)])
         continue
     tdata.append([
         P(str(k), CELL), P(esc(r.get('qid'), 14), CELL),
-        P(esc(r.get('arm'), 8), CELL), P(esc(r.get('model'), 20), CELL),
+        P(esc(r.get('arm'), 8), CELL), P(esc(short_model(r.get('model')), 24), CELL),
         P(esc(r.get('category') or r.get('probe_category'), 11), CELL),
         P(esc(r.get('answer'), 16), CELL),
         P('Y' if r.get('equiv_correct') else ('N' if not r.get('unanswerable') else '<b>N</b>'), CELL),
@@ -720,12 +950,22 @@ for c in cells:
                    f"(tiers {st['tiers']}), quote_ok {mm1(st['quote_ok'])}, "
                    f"probe abstention {mm1(st.get('probe_abs'))} "
                    f"CP95 {[round(x, 3) for x in (st.get('probe_cp') or [])]}.", SMALL))
+_run_taus = sorted({r.get('tau') for r in ok if r.get('tau') is not None})
+_cur_tau = tau_meta.get('tau')
+_gate_txt = (f'<b>data/gate/scorer.pkl + tau.json</b> '
+             f'(current tau={_cur_tau}, n_calib={tau_meta.get("n_calib")}, '
+             f'accepted_err={tau_meta.get("accepted_err")}; run-time '
+             f'tau={_run_taus}).')
+if RUN9:
+    _gate_txt += (' A runs-5-9 refit was attempted (233 labels); at the 5% '
+                  'target no threshold accepted any row (tau=1.0) because '
+                  'several wrong rows scored at the top, so the previous '
+                  '18-col gate (tau=0.95) is retained. Refit artifacts: '
+                  'results/gate_refit_run9/. The gate is not the Run 9 '
+                  'abstention mechanism.')
 story.append(P(f'Model usage histogram: {model_used_hist}. Rows with quota '
-               f'rotation exceptions: {n_exceptions}. Gate: '
-               f'<b>data/gate/scorer.pkl + tau.json</b> '
-               f'(tau={tau_meta.get("tau")}, trained on runs 5-7 live labels; '
-               f'small negative set -> generous threshold, the hard support veto '
-               f'is what enforces strictness).', BODY))
+               f'rotation exceptions: {n_exceptions}. Gate: {_gate_txt}',
+               BODY))
 
 story.append(P(f'{_sn + 2}. Honest notes and limits', H2))
 story.append(P(
@@ -745,9 +985,25 @@ story.append(P(
     'this subset are NOT comparable to the full-set keyword numbers, only to '
     'the same-subset keyword rows printed beside them.<br/>'
     '5. <b>Reader-model variance:</b> pinned models for comparability, but '
-    'quota rotation still caused X rows to be served by a fallback model '
+    'quota rotation still caused ' + str(sum(1 for r in ok if r.get('model_used') and r.get('model') and r.get('model_used') != r.get('model'))) + ' rows to be served by a fallback model '
     '(recorded per row); n=1 on most rows means no agreement signal (neutral '
     '0.5 imputed).', BODY))
+if RUN9:
+    story.append(P(
+        '6. <b>Examiner availability:</b> the independent examiner is a Groq '
+        'vision model with a daily token limit. When it cannot run, the answer '
+        'is shown as <i>not_confident</i> with an explicit reason; those rows '
+        'are excluded from examiner-only denominators and are not verification '
+        'failures. The report prints the unavailable count per cell.<br/>'
+        '7. <b>Quote-seen false negatives:</b> the examiner must see the exact '
+        'quoted span in the cited evidence. Some answers that are correct in '
+        'substance are marked not_confident when the quote is split across '
+        'lines/cells or the examiner reads a different span. This is a '
+        'conservative failure (answer shown, not verified), not a false '
+        'verified answer.<br/>'
+        '8. <b>Table/cell citations:</b> table rows and cells are heuristic '
+        'units. A quoted answer that spans a cell boundary can still fail '
+        'quote/support checks; table-aware citation remains an open item.', BODY))
 
 story.append(P(f'{_sn + 3}. Reproduce', H2))
 story.append(P(
@@ -756,16 +1012,17 @@ story.append(P(
     'scripts/select_hybrid_items.py -> python '
     'scripts/precompute_query_vectors.py (Colab; REQUIRED for the hybrid arm; '
     'scripts/run_test8.py --check-cache verifies) -> python '
-    'scripts/make_gate_labels.py (rows 5-7) + python scripts/calibrate_gate.py '
+    'scripts/make_gate_labels.py (rows 5-9) + python scripts/calibrate_gate.py '
     '--from-jsonl -> <b>python scripts/run_test8.py [--arms keyword,hybrid] '
-    '[--mock] [--limit N] [--resume dir]</b> (25 s pacing, pinned models, '
-    'quota rotation recorded) -> <b>python scripts/make_test8_pdf.py [rows_dir] '
-    '[out]</b>.', SMALL))
+    '[--mock] [--limit N] [--resume dir] [--resume-models M] '
+    '[--summarize dir]</b> (25 s pacing, pinned models, quota rotation '
+    'recorded) -> <b>python scripts/make_test8_pdf.py [rows_dir] [out]</b>.',
+    SMALL))
 
 from reportlab.platypus import SimpleDocTemplate
 doc = SimpleDocTemplate(str(OUT), pagesize=A4,
                         leftMargin=12 * mm, rightMargin=12 * mm,
                         topMargin=12 * mm, bottomMargin=12 * mm,
-                        title='Test Run 8', author='altVRAG')
+                        title=TITLE, author='altVRAG')
 doc.build(story)
 print('WROTE', OUT, OUT.stat().st_size, 'bytes')

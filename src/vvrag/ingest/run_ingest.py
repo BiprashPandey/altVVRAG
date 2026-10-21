@@ -311,10 +311,16 @@ def main() -> None:
     ap.add_argument("--reocr-min-words", type=int, default=10,
                     help="pages with fewer words are re-OCR'd")
     ap.add_argument("--vlm-transcribe-empty", action="store_true",
-                    help="VLM-transcribe pages still at zero words after OCR")
+                    default=None,
+                    help="VLM-transcribe pages still at zero words after OCR "
+                         "(default: ingest.vlm_transcribe_empty from config)")
     args = ap.parse_args()
 
     cfg = load_config(args.config)
+    if args.vlm_transcribe_empty is None:
+        # Run 9 Phase 4: config-driven default (guideline s5 ingest block)
+        args.vlm_transcribe_empty = bool(
+            getattr(getattr(cfg, "ingest", None), "vlm_transcribe_empty", False))
 
     if args.reocr:
         manifest = run_reocr(

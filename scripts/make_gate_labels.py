@@ -1,4 +1,12 @@
-"""Convert test-run rows.json into gate-calibration JSONL (Phase 4, v2).
+"""Convert test-run rows.json into gate-calibration JSONL (Phase 4; v3 Run 9).
+
+v3: the feature vector is the 18-column Run 9 order (answer_type_match removed;
+examiner verdict + question-details added as the strongest features). Examiner
+fields are recomputed from the row's `examiner`/`details` blocks. A synthetic
+wrong-answer generator (`--synthetic-wrong N`) adds negative examples for the
+gate so tau is fitted for >=95% accepted precision on the wrong-answer side.
+
+v2 (Run 8 Phase D) fixes two label bugs and widens the population:
 
 v2 (Run 8 Phase D) fixes two label bugs and widens the population:
 
@@ -30,8 +38,9 @@ sys.path.insert(0, str(REPO / "src"))
 
 from vvrag.eval.metrics import equivalent_correct_norm  # noqa: E402
 from vvrag.reader.claims import normalize_answer  # noqa: E402
+from vvrag.verify.examiner import verdict_supported_value  # noqa: E402
 from vvrag.verify.features import build_features  # noqa: E402
-from vvrag.verify.support import answer_type_match, qa_support  # noqa: E402
+from vvrag.verify.support import qa_support  # noqa: E402
 
 _STATUS_TO_RESOLVED = {"none": 1.0, "ok": 1.0, "partial": 0.5, "unresolved": 0.0}
 
@@ -89,7 +98,7 @@ def convert_row(row: dict) -> dict | None:
     supported, sup_score, sup_method = qa_support(
         question, answer, texts, entail)
 
-    base = build_features().to_dict()  # 15-col canonical defaults
+    base = build_features().to_dict()  # 18-col canonical defaults (Run 9)
     for k, v in feats_old.items():
         if k in base and v is not None:
             base[k] = v
@@ -97,10 +106,13 @@ def convert_row(row: dict) -> dict | None:
     base["cited_is_top1"] = 1.0 if cited else 0.0
     base["visual_margin"] = _visual_margin(row)
     base["citation_resolved"] = _citation_resolved(row, cited)
-    atm = answer_type_match(question, answer)
-    base["answer_type_match"] = 1.0 if atm is None else (1.0 if atm else 0.0)
-    base["support_type"] = (1.0 if sup_method.endswith("+type")
-                            else 0.5 if sup_method == "disabled" else 0.0)
+    base["support_type"] = 1.0 if sup_method.endswith("+type") else 0.0
+    ex = row.get("examiner") or {}
+    base["examiner_ran"] = 1.0 if ex.get("ran") else 0.0
+    base["examiner_supported"] = verdict_supported_value(ex if ex else {})
+    qsm = ex.get("quote_seen_match")
+    base["quote_seen_match"] = (0.5 if qsm is None else float(qsm))
+    base["details_ok"] = 1.0 if (row.get("details") or {}).get("ok", True) else 0.0
 
     retrieval = row.get("retrieval") or []
     top1 = ((retrieval[0].get("doc_id"), retrieval[0].get("page"))
@@ -132,11 +144,49 @@ def convert_row(row: dict) -> dict | None:
     }
 
 
+def _synthetic_wrong(r: dict) -> dict:
+    """A wrong-answer twin of a correct row (guideline s4.7).
+
+    The answer's last number is corrupted (2021 -> 2019, 42 -> 40); when there
+    is no number the first content word is replaced. The examiner verdict is
+    forced negative: the gate must learn that confirmed-looking features alone
+    are not enough when the answer text is off.
+    """
+    import copy as _copy
+    import re as _re
+
+    out = _copy.deepcopy(r)
+    ans = str(out.get("answer") or "")
+    m = list(_re.finditer(r"\d+(?:\.\d+)?", ans))
+    if m:
+        last = m[-1]
+        digits = last.group(0)
+        try:
+            val = float(digits)
+            new = str(int(val) - 2) if val >= 2 else str(int(val) + 7)
+            ans2 = ans[:last.start()] + new + ans[last.end():]
+        except ValueError:
+            ans2 = ans + "0"
+    else:
+        toks = ans.split()
+        ans2 = " ".join((["unrelated"] + toks[1:]) if toks else ["unrelated"])
+    out["answer"] = ans2
+    out["correct"] = False
+    out["synthetic_wrong"] = True
+    feats = dict(out.get("features") or {})
+    feats["examiner_supported"] = 0.0
+    feats["quote_seen_match"] = 0.5
+    out["features"] = feats
+    return out
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--rows", nargs="+", required=True,
                     help="one or more rows.json files")
     ap.add_argument("--out", default="results/gate_labels.jsonl")
+    ap.add_argument("--synthetic-wrong", type=int, default=0,
+                    help="add N corrupted-answer negative examples")
     args = ap.parse_args()
 
     rows_out = []
@@ -150,6 +200,13 @@ def main() -> None:
                 added += 1
         print(f"{path}: {len(data)} rows in, {added} gate labels, "
               f"running total {len(rows_out)}")
+    if args.synthetic_wrong > 0:
+        correct_rows = [r for r in rows_out if r["correct"]]
+        n = min(args.synthetic_wrong, len(correct_rows))
+        step = max(1, len(correct_rows) // n) if n else 1
+        picks = correct_rows[::step][:n]
+        rows_out.extend(_synthetic_wrong(r) for r in picks)
+        print(f"added {len(picks)} synthetic wrong-answer rows")
 
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)

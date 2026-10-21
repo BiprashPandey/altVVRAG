@@ -8,9 +8,14 @@ retriever:
   top_k: 3
   pooling: "row_col_mean"
   query_encoder: "colqwen"   # rec 5: real ColQwen text encoder; "fake" for CPU tests
-  retrieval_mode: "keyword"  # Phase 1: keyword | visual | hybrid (Run 7 pins hybrid per call)
+  retrieval_mode: "hybrid"   # Run 9: keyword | visual | hybrid (default hybrid)
   rrf_k: 60                  # reciprocal rank fusion constant
-  query_vectors_dir: "data/query_cache"   # precomputed query vectors (Colab script)
+  query_vectors_dir: "data/query_cache"   # precomputed query vectors (Colab/laptop GPU)
+  online_encoder: true       # Run 9: encode cache misses online (text-side ColQwen)
+  online_encoder_device: "cuda"
+  rerank: true               # Run 9: deterministic reranker over the top candidates
+  rerank_top_k: 5            # pages shown to the reader
+  bridge_resolution: true    # Run 9: resolve "the company that ..." bridge clauses
 qdrant:
   mode: "local"
   path: "data/index/qdrant"   # inside the export dir so index.zip is self-contained
@@ -25,7 +30,7 @@ reader:
   max_claims: 5
   fallback_provider: ""                 # rec 9: e.g. "groq"; leave empty to disable
   fallback_model: ""                    # e.g. "llama-3.3-70b-versatile"
-  retry_on_unanswerable: true           # rec 7: one retry with closest passages on OCR noise
+  retry_on_unanswerable: false          # Run 9: reader always answers; no passage retry
   unanswerable_retry_overlap: 0.2       # min question/passage keyword overlap to bother retrying
   max_answer_retries: 1
   max_pages: 3                          # Phase 2: pages in the reader prompt (primary has images)
@@ -33,12 +38,25 @@ reader:
 verify:
   quote_threshold: 0.8                  # rec 4: fuzzy quote-match pass threshold (deterministic)
   ocr_normalize: true                   # rec 7: tolerate OCR whitespace/case noise in quotes
-  require_answer_support: true          # Phase 3 veto: quote alone is not enough; answer must
-  support_entail_threshold: 0.5         #   appear in (or be entailed by) the cited text
-  answer_type_check: true               # Run 8: "how many" needs a number, "who" needs text
-  comparison_check: true                # Run 8: comparisons need both values in cited text
-  visual_tier: "cross_family"           # Run 8: visual citation middle tier (off|agreement|cross_family)
-  visual_min_agreement: 0.66            #   fallback agreement when cross-family check unavailable
+  require_answer_support: false         # Run 9: support is reported, never a veto
+  support_entail_threshold: 0.5
+  answer_type_check: false              # Run 9 (s4.1): removed from the gate
+  comparison_check: "warn"              # Run 9: "off" | "warn" | "block"
+  question_detail_check: "warn"         # Run 9 (s4.4): years/dates/units/entities
+  mode: "examiner_shown"                # Run 9 (s4.3): examiner sees the claim on every answer
+  examiner_provider: "groq"
+  examiner_models:                      # largest-first; probed at startup
+    - "qwen/qwen3.8-27b"
+    - "meta-llama/llama-4-maverick-17b-128e-instruct"
+    - "meta-llama/llama-4-scout-17b-16e-instruct"
+  examiner_max_tokens: 700
+  examiner_temperature: 0.0
+  examiner_quote_threshold: 0.6
+  examiner_on_every_answer: true
+  independence_required: true
+  log_served_by: true
+  visual_tier: "cross_family"           # legacy: superseded by the examiner
+  visual_min_agreement: 0.66
   cross_family_provider: "groq"
   cross_family_model: "qwen/qwen3.8-27b"
 nli:
@@ -69,5 +87,18 @@ eval:
 run:                                    # live test-run harnesses (no longer hardcoded in scripts)
   live_call_gap_s: 25.0                 # pacing between live reader calls
   model_candidates: ["gemini-3.5-flash-lite", "gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.1-flash-lite", "gemini-3.7-flash"]
-  reader_model_pinned: ""               # Run 7: pin ONE model for the whole run ("" = rotate)
+  reader_model_pinned: ""               # pin ONE model for the whole run ("" = config model)
+  allow_model_rotation: false           # Run 9 (s4.8): no silent switching; wait instead
+  reader_max_wait_s: 900.0
+output:                                 # Run 9 (s5): the three-state contract
+  always_show_answer: true
+  low_confidence_suffix: "(not confident enough)"
+  always_show_source: true
+  nothing_found_text: "Nothing found in this document."
+  verified_label: "Verified"
+  not_confident_label: "Not confident enough"
+  nothing_found_label: "Nothing found"
+ingest:
+  table_cells: true                     # Run 9 (s4.5): cells become citation units
+  vlm_transcribe_empty: false           # opt-in: VLM-transcribe pages with no OCR
 cache_dir: "data/cache"

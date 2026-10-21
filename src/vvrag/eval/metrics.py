@@ -294,3 +294,90 @@ def clopper_pearson_interval(k: int, n: int, ci: float = 0.95) -> tuple[float, f
     lo = 0.0 if k <= 0 else float(beta.ppf(alpha / 2.0, k, n - k + 1))
     hi = 1.0 if k >= n else float(beta.ppf(1.0 - alpha / 2.0, k + 1, n - k))
     return lo, hi
+
+
+# ---------------------------------------------------------------------------
+# Run 9 (guideline s8): the three-state answer contract metrics.
+# Operates on run-harness row dicts (rows.json / *_rows.jsonl).
+# ---------------------------------------------------------------------------
+
+def verified_stats(rows: list[dict], examiner_only: bool = False) -> dict:
+    """Verified precision, flag recall, coverage, source accuracy.
+
+    - verified_precision: correct / verified (target >= 95%)
+    - flag_recall: flagged / incorrect  (target ~90%)
+    - unflagged_wrong_rate: incorrect & unflagged / incorrect
+    - answer_coverage: gold rows with a shown answer / gold rows (was 0.33)
+    - source_accuracy: shown gold rows with source boxes/refs / shown gold rows
+    - examiner_leniency: examiner-confirmed rows later judged wrong / confirmed
+    - probe_flag_rate: probes flagged (nothing_found OR not_confident) / probes
+    - false_verified_on_probes: probes reaching VERIFIED (the dangerous one)
+
+    ``examiner_only`` restricts the *gold* denominators to rows where the
+    examiner actually ran. Rows with no examiner are ``not_confident`` by
+    contract (not verification failures), so including them in flag/coverage
+    statistics would overstate the system. Probe metrics always use all probes
+    (a probe that was never shown needs no examiner to be correctly flagged).
+    """
+    gold_all = [r for r in rows if "error" not in r and not r.get("unanswerable")]
+    probes = [r for r in rows if "error" not in r and r.get("unanswerable")]
+
+    def _ran_examiner(r):
+        return bool(r.get("examiner_ran")
+                    or (r.get("examiner") or {}).get("ran")
+                    or (r.get("examiner") or {}).get("confirmed"))
+
+    if examiner_only:
+        gold = [r for r in gold_all if _ran_examiner(r)]
+    else:
+        gold = gold_all
+
+    def _verified(r):
+        if r.get("state") is not None:
+            return r.get("state") == "verified"
+        return bool(r.get("verified"))
+
+    def _flagged(r):
+        return not _verified(r)
+
+    correct = [r for r in gold if r.get("equiv_correct")]
+    incorrect = [r for r in gold if not r.get("equiv_correct")]
+    verified = [r for r in gold if _verified(r)]
+    verified_correct = [r for r in verified if r.get("equiv_correct")]
+    flagged_incorrect = [r for r in incorrect if _flagged(r)]
+    shown = [r for r in gold_all if not r.get("abstained")]
+    with_source = [r for r in shown
+                   if r.get("pred_boxes") or r.get("pred_sentence_ids")]
+    confirmed = [r for r in gold
+                 if (r.get("examiner") or {}).get("confirmed")]
+    lenient = [r for r in confirmed if not r.get("equiv_correct")]
+    probes_flagged = [r for r in probes if _flagged(r)]
+    probes_verified = [r for r in probes if _verified(r)]
+
+    def _rate(x, n):
+        return (len(x) / n) if n else None
+
+    k = len(verified_correct)
+    n = len(verified)
+    vp_cp = list(clopper_pearson_interval(k, n)) if n else None
+
+    return {
+        "n_gold": len(gold_all),
+        "n_gold_examinable": len(gold) if examiner_only else len(gold_all),
+        "n_examiner_unavailable": (len(gold_all) - len(gold))
+        if examiner_only else 0,
+        "examiner_only": examiner_only,
+        "n_probes": len(probes),
+        "verified_precision": _rate(verified_correct, len(verified)),
+        "verified_precision_cp95": vp_cp,
+        "n_verified": len(verified),
+        "flag_recall": _rate(flagged_incorrect, len(incorrect)),
+        "unflagged_wrong_rate": _rate(
+            [r for r in incorrect if not _flagged(r)], len(incorrect)),
+        "answer_coverage": _rate(shown, len(gold_all)),
+        "source_accuracy": _rate(with_source, len(shown)),
+        "examiner_leniency": _rate(lenient, len(confirmed)),
+        "n_confirmed": len(confirmed),
+        "probe_flag_rate": _rate(probes_flagged, len(probes)),
+        "false_verified_on_probes": _rate(probes_verified, len(probes)),
+    }

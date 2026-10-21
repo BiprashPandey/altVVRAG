@@ -43,12 +43,13 @@ PROBE_PATH = REPO / 'data' / 'gold_unanswerable.json'
 HYBRID_ITEMS = REPO / 'results' / 'run8_hybrid_items.json'
 
 from vvrag.eval.gold_regions import derive_answer_words, derive_gold_box  # noqa: E402
+from vvrag.eval.harness import select_resume_rows, validate_index_arg  # noqa: E402
 from vvrag.eval.metrics import (bootstrap_ci, center_inside,  # noqa: E402
                                 clopper_pearson_interval,
                                 equivalent_correct, equivalent_correct_norm,
                                 equivalent_f1, equivalent_f1_norm, per_line_iou,
                                 sentence_precision_recall, union_iou,
-                                word_precision_recall_f1)
+                                verified_stats, word_precision_recall_f1)
 from vvrag.ground.crop import overlay_heatmap  # noqa: E402
 from vvrag.ground.text_in_box import words_in_boxes  # noqa: E402
 from vvrag.ingest.sentences import sentence_ids_for_answer, sentences_from_page  # noqa: E402
@@ -74,11 +75,15 @@ try:
         DEFAULT_MODELS = [str(_RUN_CFG.reader_model_pinned)] + [
             m for m in MODEL_CANDIDATES if m != str(_RUN_CFG.reader_model_pinned)][:1]
     LIVE_CALL_GAP_S = float(_RUN_CFG.live_call_gap_s)
+    ALLOW_MODEL_ROTATION = bool(getattr(_RUN_CFG, 'allow_model_rotation', False))
+    READER_MAX_WAIT_S = float(getattr(_RUN_CFG, 'reader_max_wait_s', 900.0))
 except Exception:  # noqa: BLE001
     pass
 
 READER_MODE = 'gemini'
 GROUNDING = 'span'
+ALLOW_MODEL_ROTATION = globals().get('ALLOW_MODEL_ROTATION', False)
+READER_MAX_WAIT_S = globals().get('READER_MAX_WAIT_S', 900.0)
 ALLOW_MISSING_VECTORS = False
 ARMS = ['keyword', 'hybrid']
 MODELS = list(DEFAULT_MODELS)
@@ -116,34 +121,61 @@ def check_query_cache(questions: list[str]) -> list[str]:
 
 
 def run_single(item, idx, arm, model, wdir, n_samples):
-    """One row: reader pinned to `model`, retrieval `arm`. Quota -> rotate."""
+    """One row: reader pinned to `model`, retrieval `arm`.
+
+    Run 9: on quota the same model is retried after a wait (up to
+    run.reader_max_wait_s); rotation across model_candidates is opt-in only
+    (run.allow_model_rotation, default false) so `model_used == model` in the
+    default configuration (fixes the Run 8 M2/M3 mislabeling).
+    """
     unanswerable = bool(item.get('category') == 'unanswerable')
     gpage = None if unanswerable else int(item['page'])
     models_tried: list[str] = []
     exceptions: list[dict] = []
     res, last_err, used_model = None, None, model
-    order = [model] + [m for m in MODEL_CANDIDATES if m != model]
+    order = [model]
+    if ALLOW_MODEL_ROTATION:
+        order += [m for m in MODEL_CANDIDATES if m != model]
+    waited = 0.0
     for cand in order if READER_MODE == 'gemini' else [model]:
         used_model = cand
-        try:
-            res = paced_answer_question(
-                item['question'], str(INDEX), str(wdir), reader_mode=READER_MODE,
-                provider='gemini', model=used_model, n_samples=n_samples,
-                grounding=GROUNDING, gate='calibrated',
-                retrieval_mode=arm)  # full corpus: doc_id=None
-            if used_model != model:
-                exceptions.append({'model': used_model, 'reason': 'quota-rotation'})
-            last_err = None
-            break
-        except Exception as e:  # noqa: BLE001
-            last_err = e
-            exceptions.append({'model': used_model,
-                               'error': f'{type(e).__name__}: {str(e)[:120]}'})
-            if _is_quota_error(e) and READER_MODE == 'gemini':
-                print(f'    429/503 on {used_model}, rotating...')
-                models_tried.append(used_model)
-                continue
-            print(f'    ERROR {type(e).__name__}: {str(e)[:100]}')
+        while True:
+            try:
+                res = paced_answer_question(
+                    item['question'], str(INDEX), str(wdir),
+                    reader_mode=READER_MODE,
+                    provider='gemini', model=used_model, n_samples=n_samples,
+                    grounding=GROUNDING, gate='calibrated',
+                    retrieval_mode=arm)  # full corpus: doc_id=None
+                if used_model != model:
+                    exceptions.append({'model': used_model,
+                                       'reason': 'quota-rotation'})
+                last_err = None
+                break
+            except Exception as e:  # noqa: BLE001
+                last_err = e
+                exceptions.append({'model': used_model,
+                                   'error': f'{type(e).__name__}: {str(e)[:120]}'})
+                if _is_quota_error(e) and READER_MODE == 'gemini':
+                    if ALLOW_MODEL_ROTATION:
+                        print(f'    429/503 on {used_model}, rotating...')
+                        models_tried.append(used_model)
+                        break
+                    if waited >= READER_MAX_WAIT_S:
+                        print(f'    quota on {used_model}; max wait '
+                              f'({READER_MAX_WAIT_S:.0f}s) exceeded - recording '
+                              f'the error (resumable)')
+                        break
+                    wait_s = min(60.0, max(1.0, READER_MAX_WAIT_S - waited))
+                    print(f'    quota on {used_model}; waiting {wait_s:.0f}s and '
+                          f'retrying the same model '
+                          f'({waited:.0f}/{READER_MAX_WAIT_S:.0f}s waited)')
+                    time.sleep(wait_s)
+                    waited += wait_s
+                    continue
+                print(f'    ERROR {type(e).__name__}: {str(e)[:100]}')
+                break
+        if res is not None:
             break
     if last_err is not None or res is None:
         row = _base_row(item, idx, n_samples)
@@ -202,14 +234,18 @@ def run_single(item, idx, arm, model, wdir, n_samples):
         wp = wr = wf1 = s_p = s_r = s_f1 = iou_v = pl_iou = cin = None
 
     answer = res.get('answer') or ''
-    abstained = bool(res.get('abstained'))
-    tier = res.get('tier', 'text' if res.get('verified') else 'none')
-    verified = bool(res.get('verified'))
+    state = res.get('state') or ('nothing_found' if res.get('abstained')
+                                 else ('verified' if res.get('verified')
+                                       else 'not_confident'))
+    abstained = state == 'nothing_found'
+    verified = state == 'verified'
+    flagged = not verified
+    tier = res.get('tier', 'text' if verified else 'none')
     golds = [item['answer'], *item.get('acceptable_answers', [])]
     if unanswerable:
-        equiv = abstained  # correct probe behavior = abstain
+        equiv = flagged  # Run 9: a probe is correct when NOT verified
         eq_f1 = None
-        equiv_verified = abstained
+        equiv_verified = flagged
     else:
         equiv_shown = (not abstained) and equivalent_correct_norm(answer, golds)
         equiv_verified = bool(equiv_shown and verified)
@@ -233,6 +269,13 @@ def run_single(item, idx, arm, model, wdir, n_samples):
         'abstain_reason': res.get('abstain_reason', ''),
         'score': res.get('score'), 'tau': res.get('tau'),
         'verified': verified, 'tier': tier,
+        'state': state, 'state_reason': res.get('state_reason', ''),
+        'not_confident': state == 'not_confident', 'flagged': flagged,
+        'reader_served_by': res.get('reader_served_by', ''),
+        'examiner_served_by': res.get('examiner_served_by', ''),
+        'examiner_ran': res.get('examiner_ran'),
+        'examiner': res.get('examiner'), 'details': res.get('details'),
+        'independence_ok': res.get('independence_ok'),
         'citations': res.get('citations'),
         'visual_confirm': res.get('visual_confirm'),
         'support': res.get('support'),
@@ -267,9 +310,10 @@ def run_single(item, idx, arm, model, wdir, n_samples):
         'work_dir': str(wdir),
     })
     print(f'    [{arm}|{used_model}] ans={answer!r:.40} equiv={equiv} '
-          f'ver_equiv={equiv_verified} tier={tier} page_hit={page_hit} '
-          f'abst={abstained} quote={row["quote_ok"]} '
-          f'mode={ret_debug.get("mode_used")}')
+          f'ver_equiv={equiv_verified} state={state} tier={tier} '
+          f'page_hit={page_hit} flagged={flagged} quote={row["quote_ok"]} '
+          f'mode={ret_debug.get("mode_used")} '
+          f'examiner={res.get("examiner_served_by")}')
     return row
 
 
@@ -403,22 +447,31 @@ def summarize(rows, label='testRun8'):
                             sent_f1=_mean([r.get('sent_f1') for r in answered]),
                             iou=_mean([r.get('iou') for r in answered]))
             if probes:
+                flag_ok = [1.0 if r.get('flagged') else 0.0 for r in probes]
+                k = int(sum(flag_ok))
+                lo, hi = clopper_pearson_interval(k, len(flag_ok))
                 abs_ok = [1.0 if r.get('abstained') else 0.0 for r in probes]
-                k = int(sum(abs_ok))
-                lo, hi = clopper_pearson_interval(k, len(abs_ok))
-                false_ans = 1.0 - (k / len(abs_ok))
+                k2 = int(sum(abs_ok))
+                lo2, hi2 = clopper_pearson_interval(k2, len(abs_ok))
+                false_ans = 1.0 - (k / len(flag_ok))
                 cell.update(probe_n=len(probes), probe_abstention=k / len(probes),
+                            probe_abstention_cp95=[round(lo, 4), round(hi, 4)],
+                            probe_nothing_found_rate=k2 / len(probes),
+                            probe_nothing_found_cp95=[round(lo2, 4), round(hi2, 4)],
                             probe_cp95=[round(lo, 4), round(hi, 4)],
                             probe_false_answer_rate=false_ans)
                 by_cat = {}
                 for cat in sorted({r.get('probe_category') for r in probes
                                    if r.get('probe_category')}):
                     sub_p = [r for r in probes if r.get('probe_category') == cat]
-                    kk = sum(1 for r in sub_p if r.get('abstained'))
+                    kk = sum(1 for r in sub_p if r.get('flagged'))
                     l2, h2 = clopper_pearson_interval(kk, len(sub_p))
-                    by_cat[cat] = {'n': len(sub_p), 'abstained': kk,
-                                   'cp95': [round(l2, 4), round(h2, 4)]}
+                    kk2 = sum(1 for r in sub_p if r.get('abstained'))
+                    by_cat[cat] = {'n': len(sub_p), 'flagged': kk,
+                                   'flagged_cp95': [round(l2, 4), round(h2, 4)],
+                                   'nothing_found': kk2}
                 cell['probe_by_category'] = by_cat
+            cell['run9'] = verified_stats(sub, examiner_only=True)
             out['cells'][f'{arm}|{model}'] = cell
 
             print(f'\n[{arm}|{model}] gold n={len(gold)} probes n={len(probes)}')
@@ -431,6 +484,17 @@ def summarize(rows, label='testRun8'):
                 print(f'  answered={cell["n_answered"]} '
                       f'tiers={cell["tiers"]} quote_ok={_fmt(cell["quote_ok"])} '
                       f'sent_f1={_fmt(cell["sent_f1"])} iou={_fmt(cell["iou"])}')
+                v9 = cell['run9']
+                print(f'  Run9: verified n={v9["n_verified"]} '
+                      f'(examinable gold {v9["n_gold_examinable"]}/'
+                      f'{v9["n_gold"]}) '
+                      f'prec={_fmt(v9["verified_precision"])} '
+                      f'flag_recall={_fmt(v9["flag_recall"])} '
+                      f'unflagged_wrong={_fmt(v9["unflagged_wrong_rate"])} '
+                      f'coverage={_fmt(v9["answer_coverage"])} '
+                      f'source_acc={_fmt(v9["source_accuracy"])} '
+                      f'exam_leniency={_fmt(v9["examiner_leniency"])} '
+                      f'(n_conf={v9["n_confirmed"]})')
                 for cat in ('single-hop', 'multi-hop', 'image-only'):
                     s2 = [r for r in gold if r.get('category') == cat]
                     if s2:
@@ -439,12 +503,15 @@ def summarize(rows, label='testRun8'):
                               f'strict={_fmt(_mean([1.0 if r.get("equiv_verified") else 0.0 for r in s2]))} '
                               f'false_abst={_fmt(_mean([1.0 if r.get("abstained") else 0.0 for r in s2]))}')
             if probes:
-                print(f'  probes: abstention={cell["probe_abstention"]:.3f} '
+                print(f'  probes: flagged={cell["probe_abstention"]:.3f} '
                       f'CP95={cell["probe_cp95"]} '
+                      f'nothing_found={cell["probe_nothing_found_rate"]:.3f} '
+                      f'false_verified={_fmt(cell["run9"]["false_verified_on_probes"])} '
                       f'false_answer={cell["probe_false_answer_rate"]:.3f}')
                 for cat, d in cell['probe_by_category'].items():
-                    print(f'    {cat:<17} abstained {d["abstained"]}/{d["n"]} '
-                          f'CP95={d["cp95"]}')
+                    print(f'    {cat:<17} flagged {d["flagged"]}/{d["n"]} '
+                          f'(nothing_found {d["nothing_found"]}) '
+                          f'CP95={d["flagged_cp95"]}')
     modes = {}
     for r in ok:
         m = (r.get('retrieval_debug') or {}).get('mode_used')
@@ -500,14 +567,15 @@ def build_rows(limit=0):
     return rows, out
 
 
-def resume(out: Path) -> None:
+def resume(out: Path, only_models: list[str] | None = None) -> None:
     rows = json.loads((out / 'rows.json').read_text(encoding='utf-8'))
     gold, probes = load_items()
     by_qid = {g['qid']: g for g in [*gold, *probes]}
     fixed = 0
-    for k, row in enumerate(rows):
-        if 'error' not in row:
-            continue
+    todo = select_resume_rows(rows, only_models)
+    skipped = sum(1 for row in rows if 'error' in row) - len(todo)
+    for k in todo:
+        row = rows[k]
         item = by_qid[row['qid']]
         wdir = out / f"{k:03d}_{row.get('arm', 'keyword')}"
         print(f'--- resume k={k} {row.get("arm")}|{row.get("model")} '
@@ -548,10 +616,17 @@ def main():
                     help='only first N gold items (probes/hybrid skipped)')
     ap.add_argument('--allow-missing-vectors', action='store_true',
                     help='hybrid cache miss -> keyword fallback per row')
+    ap.add_argument('--resume', default='', metavar='DIR',
+                    help='resume an existing run dir (only errored rows)')
+    ap.add_argument('--resume-models', default='',
+                    help='resume only rows for these models (comma list)')
     ap.add_argument('--check-cache', action='store_true',
                     help='print hybrid cache coverage and exit')
+    ap.add_argument('--summarize', default='', metavar='DIR',
+                    help='rebuild summary.json for an existing run dir and exit')
     ap.add_argument('--mock', action='store_true')
-    args, rest = ap.parse_known_args(sys.argv[1:])
+    args = ap.parse_args()
+    validate_index_arg(args.index)
 
     if args.mock:
         READER_MODE = 'mock'
@@ -560,11 +635,28 @@ def main():
     MODELS = [m.strip() for m in args.models.split(',') if m.strip()]
     ALLOW_MISSING_VECTORS = args.allow_missing_vectors
 
-    if rest and rest[0] == '--resume':
+    if args.summarize:
+        out = Path(args.summarize)
+        rows = json.loads((out / 'rows.json').read_text(encoding='utf-8'))
+        models = list(dict.fromkeys(r.get('model') for r in rows
+                                    if r.get('model')))
+        arms = list(dict.fromkeys(r.get('arm') for r in rows if r.get('arm')))
+        if models:
+            MODELS = models
+        if arms:
+            ARMS = arms
+        summary = summarize(rows)
+        (out / 'summary.json').write_text(
+            json.dumps(summary, indent=2, default=str), encoding='utf-8')
+        print(f'\nWROTE {out / "summary.json"}')
+        return
+
+    if args.resume:
         INDEX = Path(args.index)
         GOLD_PATH = Path(args.gold)
         PROBE_PATH = Path(args.probes)
-        resume(Path(rest[1]))
+        only = [m.strip() for m in args.resume_models.split(',') if m.strip()]
+        resume(Path(args.resume), only or None)
         return
 
     INDEX = Path(args.index)

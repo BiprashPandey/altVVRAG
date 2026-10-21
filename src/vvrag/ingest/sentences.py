@@ -148,10 +148,16 @@ def build_sentences(
 
 
 def sentences_from_page(
-    con, doc_id: str, page: int,
+    con, doc_id: str, page: int, include_tables: bool = True,
 ) -> tuple[list[SentenceSpan], list[WordBox]]:
     """Load sentences (and words) for a page; build on the fly if the index
-    predates sentence storage (back-compat with existing data/index)."""
+    predates sentence storage (back-compat with existing data/index).
+
+    Run 9 Phase 4: `include_tables=True` appends deterministic table citation
+    units (row units + cell units, `source="table"`, ids after the last text
+    id) computed from the OCR word geometry -- existing indexes get them
+    without re-ingestion. Pass False for exact legacy behavior.
+    """
     rows_w = con.execute(
         "SELECT text,x0,y0,x1,y1,block_id,line_id,sent_id FROM word_boxes "
         "WHERE doc_id=? AND page=?", (doc_id, page)).fetchall()
@@ -174,8 +180,22 @@ def sentences_from_page(
         sents = [SentenceSpan(doc_id=doc_id, page=page, sent_id=r[0], text=r[1],
                               box=(r[2], r[3], r[4], r[5]), block_id=r[6],
                               source=r[7] or "textlayer") for r in rows]
-        return sents, words
-    sents, _ = build_sentences(words)
+    else:
+        sents, _ = build_sentences(words)
+    if include_tables and words:
+        try:
+            row = con.execute(
+                "SELECT width FROM pages WHERE doc_id=? AND page=?",
+                (doc_id, page)).fetchone()
+            width = int(row[0]) if row and row[0] else max(
+                w.box[2] for w in words)
+            if width:
+                from vvrag.ingest.tables import table_units
+
+                first = max((s.sent_id for s in sents), default=-1) + 1
+                sents = sents + table_units(words, width, first_id=first)
+        except Exception:  # noqa: BLE001 - tables are best-effort units
+            pass
     return sents, words
 
 

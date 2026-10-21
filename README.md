@@ -1,7 +1,13 @@
 # Verifiable Visual RAG (altVRAG)
 
 A cheaper/faster variant of a three-stage verifiable document-QA system
-(**retrieve → ground → verify-or-abstain**) with a conformal abstention gate.
+(**retrieve → ground → verify, then answer in one of three states**) with a
+calibrated/conformal confidence gate. As of Run 9 the user-facing contract is
+three-state: **Verified** (the claim was examined by an independent
+different-family model and every check passed), **Not confident enough** (the
+answer is shown with the reason, never silently), or **Nothing found** (the
+only case with no answer; closest passages are shown instead). The gate
+displays confidence only — it never blocks an answer.
 Full spec: `projectGuidelines.md` (local-only, kept in your `docs/` folder).
 
 Research contributions (vs. the reference design):

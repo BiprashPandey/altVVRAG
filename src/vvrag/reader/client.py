@@ -25,6 +25,9 @@ CANNED_JSON = json.dumps(
         "answer": "mock answer",
         "quote": "",
         "sentence_ids": [],
+        "found_in": "mock page",
+        "confidence": 0.9,
+        "no_evidence": False,
         "claims": [{"text": "The mock page supports the mock answer.", "answer_span": "mock answer"}],
     }
 )
@@ -41,6 +44,8 @@ class ReaderClient(ABC):
 class MockReader(ReaderClient):
     """Deterministic canned reader for tests / offline smoke runs. No network."""
 
+    served_by = "mock/mock"
+
     def __init__(self, canned: str = CANNED_JSON, calls: dict | None = None) -> None:
         self.canned = canned
         self.calls = calls if calls is not None else {"n": 0}
@@ -52,6 +57,8 @@ class MockReader(ReaderClient):
 
 class FlakyMockReader(ReaderClient):
     """Fails `fail_times` with RateLimitError, then returns canned output. For 429 tests."""
+
+    served_by = "mock/mock"
 
     def __init__(self, fail_times: int = 1, canned: str = CANNED_JSON) -> None:
         from vvrag.ratelimit import RateLimitError
@@ -71,6 +78,8 @@ class FlakyMockReader(ReaderClient):
 class SequenceMockReader(ReaderClient):
     """Returns queued outputs in order (for retry-once tests)."""
 
+    served_by = "mock/mock"
+
     def __init__(self, outputs: list[str]) -> None:
         self.outputs = list(outputs)
         self.temps: list[float] = []
@@ -87,10 +96,12 @@ class GeminiReader(ReaderClient):
     (Client(api_key=...), models.generate_content(model, contents, config)).
     """
 
-    def __init__(self, model: str, api_key: str, max_output_tokens: int = 512) -> None:
+    def __init__(self, model: str, api_key: str, max_output_tokens: int = 512,
+                 timeout_s: float = 180.0) -> None:
         self.model = model
         self.api_key = api_key
         self.max_output_tokens = max_output_tokens
+        self.timeout_s = float(timeout_s)
         self._client = None
 
     def _ensure(self):
@@ -98,9 +109,13 @@ class GeminiReader(ReaderClient):
             return self._client
         try:
             from google import genai
+            from google.genai import types as genai_types
         except ImportError as e:
             raise RuntimeError("pip install google-genai for the gemini reader") from e
-        self._client = genai.Client(api_key=self.api_key)
+        self._client = genai.Client(
+            api_key=self.api_key,
+            http_options=genai_types.HttpOptions(
+                timeout=int(self.timeout_s * 1000)))
         return self._client
 
     def generate(self, images, prompt, temperature, n) -> list[str]:
@@ -210,6 +225,16 @@ class CachedReader(ReaderClient):
         self.model = model
         self.max_retries = max_retries
 
+    @property
+    def served_by(self) -> str:
+        """Run 9 (guideline s4.8): which provider/model actually served."""
+        return f"{self.provider}/{self.model}"
+
+    @property
+    def fallback_used(self) -> int:
+        """How often the configured fallback fired (0 when none)."""
+        return int(getattr(self.inner, "fallback_used", 0) or 0)
+
     def generate(self, images, prompt, temperature, n) -> list[str]:
         image_hashes: list[str] = []
         for im in images:
@@ -258,7 +283,7 @@ def run_reader_samples(
     Invalid JSON is retried once per sample, then marked failed
     (answer UNANSWERABLE, raw kept). Returns (samples, n_api_calls).
     """
-    from vvrag.reader.claims import parse_reader_output_ext
+    from vvrag.reader.claims import parse_reader_output_v2
 
     samples: list[ReaderSample] = []
     api_calls = 0
@@ -266,16 +291,19 @@ def run_reader_samples(
     def _one(temp: float) -> tuple[ReaderSample, int]:
         raw = reader.generate(images, prompt, temp, 1)[0]
         calls = 1
-        answer, quote, sids, refs, region, claims, ok = parse_reader_output_ext(
-            raw, max_claims)
-        if not ok:  # retry once
+        p = parse_reader_output_v2(raw, max_claims)
+        if not p["ok"]:  # retry once
             raw = reader.generate(images, prompt, temp, 1)[0]
             calls += 1
-            answer, quote, sids, refs, region, claims, ok = parse_reader_output_ext(
-                raw, max_claims)
-        return ReaderSample(sample_id=0, answer=answer, claims=claims, raw=raw,
-                            quote=quote, sentence_ids=sids,
-                            sentence_refs=refs, region=region), calls
+            p = parse_reader_output_v2(raw, max_claims)
+        return ReaderSample(sample_id=0, answer=p["answer"],
+                            claims=p["claims"], raw=raw, quote=p["quote"],
+                            sentence_ids=p["sentence_ids"],
+                            sentence_refs=p["sentence_refs"],
+                            region=p["region"],
+                            no_evidence=p["no_evidence"],
+                            found_in=p["found_in"],
+                            confidence=p["confidence"]), calls
 
     for s in range(n_samples):
         temp = 0.0 if s == 0 else temperature

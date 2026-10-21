@@ -8,28 +8,37 @@ viewer draws (one box per cited sentence).
 from __future__ import annotations
 
 
-READER_SYSTEM = """You are a precise document question-answering assistant.
-You are shown a document page image and a cropped evidence region that is likely to contain the answer.
-You are also given numbered sentences from the page, each like [S12] some sentence text.
+READER_SYSTEM = """You are a careful document question-answering assistant.
+You are shown a document page image (possibly several candidate pages, the PRIMARY page has
+its image + cropped evidence region attached) and numbered sentences from those pages.
 Answer ONLY from what is visible in the images and the numbered sentences. Do not use outside knowledge.
-If the page does not contain the answer, set "answer" to "UNANSWERABLE", "quote" to "", and "sentence_ids" to [].
-Give a SHORT, verbatim extractive answer: copy the exact supporting words from the page, no extra preamble like "As".
-Also give the exact "quote" (verbatim words that support the answer) and the "sentence_ids" of the
-numbered sentences that contain that quote (usually one, several allowed).
-If the answer value is visible in the page image (a chart, table or figure) but no numbered
-sentence contains it verbatim, STILL answer: set "quote" to the closest visible text (or ""),
-"sentence_ids" to [], and add "evidence_type": "visual" plus a "region":
-{"page": "<label of the cited page, e.g. p0>", "box_frac": [x0,y0,x1,y1]} with fractions (0-1)
-of that page image tightly around the value. If the answer came from sentences, use
-"evidence_type": "text" and omit the region.
+
+ALWAYS GIVE YOUR BEST ANSWER -- even when the evidence is partial, noisy, or the page only
+partly fits the question. Only if the shown pages genuinely contain NOTHING relevant at all,
+set "no_evidence": true and "answer": "UNANSWERABLE". Never refuse just because the wording is
+imperfect, OCR is noisy, or the value sits in a chart/table/image instead of a sentence.
+
+Give a SHORT, verbatim extractive answer: copy the exact supporting words from the page, no
+extra preamble like "As".
+Also return:
+- "quote": the exact verbatim words that support the answer (empty string if none),
+- "sentence_ids": the numbered sentences whose text contains that quote (usually one; [] if none),
+- "found_in": where on the page the answer is, in a few words (e.g. "table row 'Condensed
+  milk'", "donut chart label", "heading top left", "paragraph under Sales"),
+- "confidence": your honest 0-1 confidence that the answer is correct for THIS page.
+If the answer is visible in the image but no numbered sentence contains it verbatim, STILL
+answer: set "quote" to the closest visible text (or ""), "sentence_ids" to [], and add
+"evidence_type": "visual" plus a "region": {"page": "<label, e.g. p0>",
+"box_frac": [x0,y0,x1,y1]} with fractions (0-1) tightly around the value. If the answer came
+from sentences, use "evidence_type": "text" and omit the region.
 You may combine values that are each visible (e.g. add two chart labels for a total), but
-never use knowledge from outside the shown material. Minor OCR noise is not a reason to abstain.
+never use knowledge from outside the shown material. Minor OCR noise is not a reason to refuse.
 Return STRICT JSON only, no code fences, no commentary, matching this schema:
-{"answer": "<short final answer>", "quote": "<verbatim supporting words>", "sentence_ids": [12], "evidence_type": "text", "region": null, "claims": [{"text": "<one atomic fact>", "answer_span": "<exact supporting words or null>"}]}
+{"answer": "<short final answer>", "quote": "<verbatim supporting words>", "sentence_ids": [12], "found_in": "<where on the page>", "confidence": 0.8, "no_evidence": false, "evidence_type": "text", "region": null, "claims": [{"text": "<one atomic fact>", "answer_span": "<exact supporting words or null>"}]}
 Atomic means: one fact per claim, no pronouns without referents.
 The page may be a slide with OCR errors, spacing quirks (e.g. "Col 3" vs "Col3"),
 or ALL-CAPS headings. Answer the INTENDED meaning and match the closest visible
-text; do not abstain just because of minor OCR noise. Only say UNANSWERABLE when
+text; do not refuse just because of minor OCR noise. Only set "no_evidence": true when
 the page genuinely lacks the information."""
 
 
@@ -151,6 +160,48 @@ def build_visual_check_prompt(question: str, claimed_answer: str) -> str:
         f"Claimed answer: {claimed_answer}",
         "JSON:",
     ]))
+
+
+EXAMINER_SYSTEM = """You are a strict, independent examiner. You are shown the evidence image(s)
+for one document page (a zoomed region and/or the page itself). Another model was asked the
+question below and produced a claim. Your job is to find problems with the claim, not to be polite.
+
+Rules:
+- Work only from the image(s) shown. NEVER use outside knowledge.
+- Do not assume the other model is right. First look for the answer YOURSELF in the image.
+- "quote_seen": copy the exact words visible in the image that carry the answer (verbatim).
+  If the answer value is a label/number in a chart or table, copy that label/number.
+  If you cannot find the claimed answer at all in the image, set "quote_found": false and
+  "quote_seen": "".
+- "quote_found": true only when the answer is really visible in the image.
+- "answer_supported": "yes" (visible and correct), "partly" (partially visible or ambiguous),
+  "no" (not visible or wrong for this page).
+- "answers_the_question": true only if the claim actually answers the question as asked
+  (right kind of thing, right entity, right year/unit/scope when the question specifies one).
+- "problem": one short sentence naming the biggest problem, or "" when there is none.
+Return STRICT JSON only:
+{"quote_found": true, "quote_seen": "<verbatim words from the image>", "answer_supported": "yes", "answers_the_question": true, "problem": ""}"""
+
+
+def build_examiner_prompt(
+    question: str,
+    claimed_answer: str,
+    claimed_quote: str = "",
+    found_in: str = "",
+) -> str:
+    """Run 9 (guideline s4.3): the examiner is SHOWN the claim (not just asked
+    to answer), then asked to find the quote itself and judge fit."""
+    parts = [
+        EXAMINER_SYSTEM,
+        f"Question: {question}",
+        f"Claimed answer: {claimed_answer}",
+    ]
+    if claimed_quote:
+        parts.append(f"The other model's quote: {claimed_quote!r}")
+    if found_in:
+        parts.append(f"The other model says it is located at: {found_in}")
+    parts.append("JSON:")
+    return "\n\n".join(parts)
 
 
 def build_passage_retry_prompt(

@@ -34,6 +34,10 @@ from vvrag.ingest.sentences import box_frac, sentences_from_page
 from vvrag.logging_utils import get_logger
 from vvrag.reader.claims import normalize_answer, validate_sentence_ids
 from vvrag.schemas import WordBox
+from vvrag.verify.examiner import (examiner_confirmed, parse_examiner_output,
+                                   verdict_supported_value)
+from vvrag.verify.question_details import (check_question_details,
+                                           corpus_detail_vocab)
 
 log = get_logger(__name__)
 
@@ -67,6 +71,32 @@ def page_words(con: sqlite3.Connection, doc_id: str, page: int) -> list[WordBox]
         "SELECT text,x0,y0,x1,y1,block_id,line_id FROM word_boxes WHERE doc_id=? AND page=?",
         (doc_id, page)).fetchall()
     return [WordBox(doc_id, page, r[0], (r[1], r[2], r[3], r[4]), r[5], r[6]) for r in rows]
+
+
+def _check_online_encoder(cfg_ret) -> None:
+    """Raise RuntimeError when the online ColQwen query encoder cannot run.
+
+    Phase 4: the live path may encode the question on the fly on the GPU box.
+    This guard is what keeps a CPU-only laptop (or a fresh HF cache) from
+    triggering a multi-GB download / CPU load inside a request: CUDA is
+    required unless the configured device is explicitly cpu AND
+    ALLOW_CPU_QUERY_ENCODER=1 is set.
+    """
+    import importlib.util as _ilu
+    import os as _os
+
+    want_dev = str(getattr(cfg_ret, "online_encoder_device", "cuda")
+                   or "cuda").lower()
+    override = _os.environ.get("ALLOW_CPU_QUERY_ENCODER", "") == "1"
+    if _ilu.find_spec("colpali_engine") is None:
+        raise RuntimeError("colpali-engine not installed")
+    import torch as _torch
+
+    if (not want_dev.startswith("cpu")
+            and not _torch.cuda.is_available() and not override):
+        raise RuntimeError(
+            "CUDA unavailable (set ALLOW_CPU_QUERY_ENCODER=1 to force the "
+            "slow CPU encoder)")
 
 
 def keyword_rank(question: str, con: sqlite3.Connection,
@@ -320,31 +350,81 @@ def answer_question(question: str, index_dir: str, work_dir: str,
 
         store = QueryVectorStore(getattr(cfg_ret, "query_vectors_dir", "data/query_cache"))
         hit = store.get(question)
-        if hit is None:
-            retrieval_note = ("no cached query vector; keyword fallback "
-                              "(run scripts/precompute_query_vectors.py)")
+        if hit is None and bool(getattr(cfg_ret, "online_encoder", True)):
+            # Phase 4: encode the question on the fly (laptop GPU) and cache
+            # it; any failure (no GPU/weights) is an honest keyword fallback.
+            try:
+                # Phase 4 guard: never trigger a multi-GB model download /
+                # CPU load inside a request (see _check_online_encoder).
+                _check_online_encoder(cfg_ret)
+                from vvrag.retrieve.query_embed import create_query_embedder
+
+                enc = create_query_embedder(
+                    "colqwen",
+                    device=str(getattr(cfg_ret, "online_encoder_device",
+                                      "auto") or "auto"))
+                enc.load()
+                qv, qlabels = enc.embed_query(question)
+                qvecs = np.asarray(qv, dtype=np.float32)
+                try:
+                    store.put(question, qvecs, list(qlabels),
+                              model=str(getattr(enc, "model_id", "")
+                                        or getattr(enc, "model_name", "")),
+                              device=str(getattr(enc, "device", "")))
+                except Exception:  # noqa: BLE001 - caching is best-effort
+                    pass
+                retrieval_note = ("online ColQwen query encoding "
+                                  "(cache miss; stored)")
+            except Exception as e:  # noqa: BLE001 - no GPU/weights = keyword
+                qvecs = None
+                retrieval_note = (f"online query encoder unavailable "
+                                  f"({type(e).__name__}: {str(e)[:80]}); "
+                                  f"keyword fallback")
+        elif hit is not None:
+            qvecs = hit[0]
+        if qvecs is None:
+            if not retrieval_note:
+                retrieval_note = ("no cached query vector; keyword fallback "
+                                  "(run scripts/precompute_query_vectors.py)")
             ranked = kw_full[:5]
         else:
-            qvecs = hit[0]
-            from vvrag.retrieve.fusion import (deck_aggregate, rank_order,
-                                               rrf_fuse, visual_page_scores)
+            try:
+                from vvrag.retrieve.fusion import (deck_aggregate, rank_order,
+                                                   rrf_fuse,
+                                                   visual_page_scores)
 
-            page_list = [(d, p) for d, p, _s, _w in kw_full]
-            vis_scores = visual_page_scores(index_dir, page_list, qvecs)
-            vis_order = rank_order(vis_scores)
-            if mode == "visual":
-                order = vis_order
-                rank_scores = vis_scores
-            else:
-                fused = rrf_fuse([page_list, vis_order],
-                                 k=int(getattr(cfg_ret, "rrf_k", 60)))
-                order = [(d, p) for d, p, _s in fused]
-                rank_scores = {(d, p): s for d, p, s in fused}
-            ranked = [(d, p, rank_scores[(d, p)], words_map[(d, p)])
-                      for d, p in order if (d, p) in words_map][:5]
-            mode_used = mode
+                page_list = [(d, p) for d, p, _s, _w in kw_full]
+                vis_scores = visual_page_scores(index_dir, page_list, qvecs)
+                vis_order = rank_order(vis_scores)
+                if mode == "visual":
+                    order = vis_order
+                    rank_scores = vis_scores
+                else:
+                    fused = rrf_fuse([page_list, vis_order],
+                                     k=int(getattr(cfg_ret, "rrf_k", 60)))
+                    order = [(d, p) for d, p, _s in fused]
+                    rank_scores = {(d, p): s for d, p, s in fused}
+                ranked = [(d, p, rank_scores[(d, p)], words_map[(d, p)])
+                          for d, p in order if (d, p) in words_map][:5]
+                mode_used = mode
+            except Exception as e:  # noqa: BLE001 - honest keyword fallback
+                mode_used = "keyword"
+                retrieval_note = (f"visual scoring failed "
+                                  f"({type(e).__name__}: {str(e)[:80]}); "
+                                  f"keyword fallback")
+                ranked = kw_full[:5]
     else:
         ranked = kw_full[:5]
+
+    # Phase 4: deterministic lexical rerank after fusion (IDF + bigram +
+    # number bonus). Pure CPU, no model. Recorded for measurement runs.
+    rerank_used = False
+    if bool(getattr(cfg_ret, "rerank", False)) and len(ranked) > 1:
+        from vvrag.retrieve.rerank import lexical_rerank
+
+        ranked = lexical_rerank(
+            question, ranked, k=int(getattr(cfg_ret, "rerank_top_k", 5)))
+        rerank_used = True
 
     def _top_pages(scores, n: int = 3):
         if not scores:
@@ -356,6 +436,7 @@ def answer_question(question: str, index_dir: str, work_dir: str,
     retrieval_info = {
         "mode_requested": mode,
         "mode_used": mode_used,
+        "rerank_used": rerank_used,
         "note": retrieval_note,
         "keyword_top5": [{"doc_id": d, "page": p, "score": round(float(s), 4)}
                          for d, p, s, _w in kw_full[:5]],
@@ -373,6 +454,28 @@ def answer_question(question: str, index_dir: str, work_dir: str,
     if primary_key not in ctx_keys:
         ctx_keys.insert(0, primary_key)
 
+    # Phase 4: bridge-page resolution for multi-hop questions. Pages covering
+    # the question tokens that the primary page lacks are added to the reader
+    # context (the weakest ranked page yields the slot); everything is still
+    # OCR pages from the same index. Recorded per row in retrieval_debug.
+    bridge_pages: list[dict] = []
+    if (bool(getattr(cfg_ret, "bridge_resolution", True))
+            and len(words_map) > len(ctx_keys)):
+        from vvrag.retrieve.bridge import resolve_bridge
+
+        extra = resolve_bridge(question, primary_key, ctx_keys, words_map,
+                               max_extra=1)
+        if extra:
+            d_b, p_b, s_b = extra[0]
+            ctx_keys = ctx_keys[: max_pages - 1] + [(d_b, p_b)]
+            ctx_keys = [primary_key] + [k for k in ctx_keys
+                                        if k != primary_key]
+            bridge_pages.append({"doc_id": d_b, "page": p_b, "score": s_b})
+            retrieval_info["note"] = (
+                (retrieval_info["note"] + "; ") if retrieval_info["note"] else ""
+            ) + f"bridge page {d_b}:{p_b} promoted into reader context"
+    retrieval_info["bridge_pages"] = bridge_pages
+
     safe = "".join(c if c.isalnum() or c in "-_." else "_" for c in f"q{int(time.time()*1000)%100000000}")
     _page_state: dict = {}
 
@@ -389,7 +492,10 @@ def answer_question(question: str, index_dir: str, work_dir: str,
             _page_state[key] = {
                 "doc_id": d, "page": p,
                 "words": words_map.get(key) or page_words(con, d, p),
-                "sentences": sentences_from_page(con, d, p)[0],
+                "sentences": sentences_from_page(
+                    con, d, p,
+                    include_tables=bool(getattr(getattr(cfg, "ingest", None),
+                                                "table_cells", True)))[0],
                 "W": W_, "H": H_, "gh": gh_, "gw": gw_, "img_path": img_path_,
             }
         return _page_state[key]
@@ -676,127 +782,198 @@ def answer_question(question: str, index_dir: str, work_dir: str,
     # contained in (or entailed by) the cited text, else evidence is unverified.
     # Run 8: question-aware (answer type + comparison values) via qa_support;
     # the statement-level entailment feeds support, claim min stays the feature.
+    # Run 9 (guideline s4.1): support checks are reported, never a veto.
     require_support = bool(getattr(cfg.verify, "require_answer_support", False))
     support_threshold = float(getattr(cfg.verify, "support_entail_threshold", 0.5))
-    type_check = bool(getattr(cfg.verify, "answer_type_check", True))
-    comparison_check = bool(getattr(cfg.verify, "comparison_check", True))
-    if not require_support:
-        supported, support_score, support_method = True, 1.0, "disabled"
+    type_check = getattr(cfg.verify, "answer_type_check", False)
+    comparison_check = getattr(cfg.verify, "comparison_check", "warn")
+    support_warnings: list[str] = []
+    if is_unanswerable:
+        supported, support_score, support_method = False, 0.0, "empty"
     elif not cited_texts:
         supported, support_score, support_method = False, 0.0, "no_citation"
     else:
-        from vvrag.verify.support import qa_support
+        from vvrag.verify.support import qa_support_report
 
-        supported, support_score, support_method = qa_support(
+        (supported, support_score, support_method,
+         support_warnings) = qa_support_report(
             question, answer, cited_texts, stmt_entail, support_threshold,
             type_check=type_check, comparison_check=comparison_check)
-    verified = bool(quote_ok and supported and not is_unanswerable)
 
-    def _unsupported_reason() -> str:
-        if citation_info["status"] == "unresolved":
-            ex = citation_info["unresolved"][0] if citation_info["unresolved"] else None
-            return (f"citation could not be resolved on the retrieved pages "
-                    f"({citation_info['n_refs']} ref(s)"
-                    + (f", e.g. {ex}" if ex else "") + ")")
-        if support_method == "type_mismatch":
-            return "answer type does not match the question"
-        if support_method == "missing_comparison_values":
-            return "comparison values not both present in cited text"
-        return f"answer not supported by cited text ({support_method})"
-
-    # Phase 9 (Run 8): visual middle tier -- the reader answered from something
-    # visible (chart/table/figure) that no sentence verifies. The answer is
-    # accepted only with an independent confirmation: cross-family vision check
-    # (different provider/model family) or, when that is unavailable, strong
-    # agreement across the reader's own samples. Never for unanswerable rows.
-    visual_ok = False
-    visual_confirm = {"attempted": False, "method": "", "verdict": False,
-                      "detail": ""}
-    vtier = str(getattr(cfg.verify, "visual_tier", "off") or "off").lower()
-    visual_min_agr = float(getattr(cfg.verify, "visual_min_agreement", 0.66))
+    # ---------------- Run 9 (guideline s4.3/s7): the examiner -------------
+    # The examiner is shown the claim on EVERY answer (not just failed ones),
+    # finds the quote itself and judges fit. A failed or unavailable examiner
+    # means "not confident enough" -- it never vetoes and never silently
+    # switches to the reader's own family.
     region_present = bool(samples[0].region and samples[0].region.get("box_frac"))
-    # Only quote-grounding failures are rescuable visually: a wrong-type or
-    # comparison-incomplete answer is a hard question-aware veto, not an OCR
-    # proximity problem.
-    quote_ground_failure = (not quote_ok
-                            and support_method not in ("type_mismatch",
-                                                       "missing_comparison_values",
-                                                       "empty")
-                            and citation_info["status"] in ("ok", "partial"))
-    if (not is_unanswerable and not verified and reader_mode != "mock"
-            and vtier in ("agreement", "cross_family")
-            and (region_present or quote_ground_failure)):
-        visual_confirm["attempted"] = True
-        agree_ok = bool(agr >= visual_min_agr)
-        # Check image: the reader's own region crop (padded) when it gave one,
-        # else the full page. A chart/figure answer is only confirmable where
-        # the reader says it saw it.
-        check_img = img_path
-        _r0 = samples[0].region or {}
-        _f = _r0.get("box_frac")
-        if _f:
-            _rkey = primary_key
-            if _r0.get("page") is not None:
-                _rkey = next((k for k in ctx_keys
-                              if k[1] == int(_r0["page"])), primary_key)
-            _st = _get_state(_rkey)
-            if _st is not None:
+    ex_mode = str(getattr(cfg.verify, "mode", "examiner_shown")
+                  or "examiner_shown").lower()
+    ex_on = ex_mode in ("examiner_shown", "on", "each", "true") or bool(
+        getattr(cfg.verify, "examiner_on_every_answer", True))
+    ex_threshold = float(getattr(cfg.verify, "examiner_quote_threshold", 0.6))
+    examiner: dict = {"ran": False, "served_by": "", "error": "",
+                      "quote_found": False, "quote_seen": "",
+                      "answer_supported": "", "answers_the_question": None,
+                      "problem": "", "quote_seen_match": 0.0,
+                      "confirmed": False, "reason": "not attempted"}
+    independence_ok = True
+
+    def _check_img() -> str:
+        """Region crop (padded) when the reader gave one, else the page image."""
+        check = img_path
+        f = (samples[0].region or {}).get("box_frac")
+        if f:
+            rkey = primary_key
+            rpage = (samples[0].region or {}).get("page")
+            if rpage is not None:
+                rkey = next((k for k in ctx_keys if k[1] == int(rpage)),
+                            primary_key)
+            st = _get_state(rkey)
+            if st is not None:
                 try:
                     from PIL import Image as _PILImage
 
-                    _im = _PILImage.open(_st["img_path"])
-                    _w, _h = _im.size
-                    _pad = 0.04
-                    _box = (int(max(0.0, _f[0] - _pad) * _w),
-                            int(max(0.0, _f[1] - _pad) * _h),
-                            int(min(1.0, _f[2] + _pad) * _w),
-                            int(min(1.0, _f[3] + _pad) * _h))
-                    if _box[2] > _box[0] and _box[3] > _box[1]:
-                        _cp = Path(str(crop_path)).with_name(
+                    im = _PILImage.open(st["img_path"])
+                    w, h = im.size
+                    pad = 0.04
+                    box = (int(max(0.0, f[0] - pad) * w),
+                           int(max(0.0, f[1] - pad) * h),
+                           int(min(1.0, f[2] + pad) * w),
+                           int(min(1.0, f[3] + pad) * h))
+                    if box[2] > box[0] and box[3] > box[1]:
+                        cp = Path(str(crop_path)).with_name(
                             Path(str(crop_path)).stem + "_vcheck.png")
-                        _im.crop(_box).save(_cp)
-                        check_img = str(_cp)
+                        im.crop(box).save(cp)
+                        check = str(cp)
                 except Exception:  # noqa: BLE001 - fall back to full page
-                    check_img = img_path
-        if vtier == "cross_family":
-            try:
-                from vvrag.cache import DiskCache as _DiskCache
-                from vvrag.ratelimit import RateLimiter as _RateLimiter
-                from vvrag.reader.client import create_reader as _create_reader
-                from vvrag.reader.prompts import build_visual_check_prompt
+                    check = img_path
+        return check
 
-                cf_prov = getattr(cfg.verify, "cross_family_provider", "groq")
-                cf_model = getattr(cfg.verify, "cross_family_model", "")
-                cf_reader = _create_reader(
-                    cf_prov, cf_model, _DiskCache(cfg.cache_dir),
-                    _RateLimiter(cfg.ratelimit.requests_per_minute))
-                cf_imgs = [check_img]
-                if (crop_path and str(crop_path) != str(check_img)
-                        and Path(str(crop_path)).exists()
-                        and str(crop_path) not in cf_imgs):
-                    cf_imgs.append(str(crop_path))
-                cf_raw = cf_reader.generate(
-                    cf_imgs, build_visual_check_prompt(question, answer), 0.0, 1)[0]
-                api_calls += 1
-                match, cf_sup, cf_ans = _visual_check_verdict(answer, cf_raw)
-                visual_confirm.update(
-                    method=f"cross_family:{cf_prov}/{cf_model}",
-                    verdict=match,
-                    detail=f"supports={cf_sup}; read={cf_ans[:140]}")
-                visual_ok = match
-            except Exception as e:  # noqa: BLE001 - cache/limiter/quota issues
-                log.warning("cross-family visual check failed: %s", e)
-                visual_confirm["detail"] = f"cross-family unavailable: {e}"
-                if agree_ok:
-                    visual_ok = True
-                    visual_confirm.update(
-                        method=f"agreement>={visual_min_agr:g}", verdict=True,
-                        detail=f"cross-family unavailable; sample agreement {agr:.2f}")
+    verdict: dict | None = None
+    if not is_unanswerable and ex_on and str(answer).strip():
+        from vvrag.reader.prompts import build_examiner_prompt
+
+        ex_prompt = build_examiner_prompt(question, answer,
+                                          samples[0].quote or "",
+                                          samples[0].found_in or "")
+        ex_imgs = [_check_img()]
+        if (crop_path and str(crop_path) != ex_imgs[0]
+                and Path(str(crop_path)).exists()
+                and str(crop_path) not in ex_imgs):
+            ex_imgs.append(str(crop_path))
+        if reader_mode == "mock":
+            from vvrag.verify.examiner import MockExaminer
+
+            raw = MockExaminer().examine(question, answer,
+                                         samples[0].quote or "", cited_texts)
+            verdict = parse_examiner_output(raw)
+            examiner.update(ran=True, served_by="mock/examiner", mock=True)
         else:
-            visual_ok = bool(agree_ok)
-            visual_confirm.update(method="agreement", verdict=bool(agree_ok),
-                                  detail=f"sample agreement {agr:.2f}")
-    tier = ("text" if verified else "visual" if visual_ok else "none")
+            from vvrag.cache import DiskCache as _DiskCache
+            from vvrag.ratelimit import RateLimiter as _RateLimiter
+            from vvrag.reader.client import create_reader as _create_reader
+
+            provider_ex = str(getattr(cfg.verify, "examiner_provider", "groq"))
+            models_ex = list(getattr(cfg.verify, "examiner_models", None)
+                             or [getattr(cfg.verify, "cross_family_model", "")])
+            independence_ok = (provider_ex.lower()
+                               != str(provider or "").lower())
+            err = ""
+            for m_ex in models_ex:
+                if not m_ex:
+                    continue
+                try:
+                    cl = _create_reader(
+                        provider_ex, m_ex, _DiskCache(cfg.cache_dir),
+                        _RateLimiter(cfg.ratelimit.requests_per_minute),
+                        max_output_tokens=int(getattr(
+                            cfg.verify, "examiner_max_tokens", 700)))
+                    raw = cl.generate(
+                        ex_imgs, ex_prompt,
+                        float(getattr(cfg.verify, "examiner_temperature", 0.0)),
+                        1)[0]
+                    api_calls += 1
+                    verdict = parse_examiner_output(raw)
+                    examiner.update(ran=True,
+                                    served_by=f"{provider_ex}/{m_ex}")
+                    break
+                except Exception as e:  # noqa: BLE001 - try next model
+                    err = str(e)
+                    log.warning("examiner %s/%s failed: %s", provider_ex, m_ex, e)
+            if verdict is None:
+                examiner["error"] = err or "no examiner model available"
+                verdict = {"ok": False, "quote_found": False, "quote_seen": "",
+                           "answer_supported": "", "answers_the_question": None,
+                           "problem": "",
+                           "parse_error": examiner["error"]}
+        examiner.update(verdict)
+        confirmed, qs_match, ex_reason = examiner_confirmed(
+            verdict, samples[0].quote or "", cited_texts, ex_threshold, ocr_norm)
+        examiner.update(confirmed=bool(confirmed),
+                        quote_seen_match=round(float(qs_match), 4),
+                        reason=ex_reason)
+        if not independence_ok:
+            examiner.update(
+                confirmed=False,
+                reason="the examiner shares the reader's provider; "
+                       "independence is required")
+
+    # Run 9 (s4.4): question-detail grounding (years/dates/units/entities).
+    detail_mode = str(getattr(cfg.verify, "question_detail_check", "warn"))
+    corpus_years, corpus_entities = corpus_detail_vocab(con)
+    details = check_question_details(
+        question,
+        cited_texts if cited_texts else ([crop_text] if has_text else []),
+        quote_seen=examiner.get("quote_seen", ""),
+        corpus_years=corpus_years, corpus_entities=corpus_entities,
+        mode=detail_mode)
+
+    # ---------------- Run 9 (s7): the three-state decision ----------------
+    quote_on_page = bool(quote_ok)
+    citation_conflict = citation_info["status"] == "unresolved"
+    rules_ok = bool(quote_on_page and details["ok"] and not citation_conflict)
+    nothing_found = bool(is_unanswerable or samples[0].no_evidence
+                         or not str(answer).strip())
+    if nothing_found:
+        state = "nothing_found"
+    elif (bool(examiner["confirmed"]) and rules_ok and bool(examiner["ran"])
+          and independence_ok):
+        state = "verified"
+    else:
+        state = "not_confident"
+    verified = state == "verified"
+
+    reasons: list[str] = []
+    if state == "nothing_found":
+        reasons.append("the reader found nothing relevant on the retrieved "
+                       "pages")
+    elif state == "not_confident":
+        if examiner["error"] and not examiner["ran"]:
+            reasons.append(f"the examiner check could not be run "
+                           f"({examiner['error']})")
+        elif examiner["ran"] and not examiner["confirmed"] and examiner["reason"]:
+            reasons.append(examiner["reason"])
+        if not examiner["ran"] and not examiner["error"]:
+            reasons.append("the examiner check was not run")
+        if not independence_ok:
+            reasons.append("the examiner was not independent of the reader")
+        if not quote_on_page:
+            if citation_conflict:
+                reasons.append("the reader's citation did not resolve to the "
+                               "retrieved pages")
+            elif not citations_valid:
+                reasons.append("the answer has no resolvable citation on the "
+                               "retrieved pages")
+            else:
+                reasons.append("the quote is not verbatim on the cited page")
+        for w in (details.get("warnings") or [])[:2]:
+            reasons.append(w)
+        for w in support_warnings[:1]:
+            reasons.append(w)
+    state_reason = "; ".join(dict.fromkeys(r for r in reasons if r))
+
+    tier = ("text" if verified
+            else "visual" if (region_present and not nothing_found) else "none")
 
     # final evidence boxes = cited sentences only (#1, #4, #6; Phase 2 across pages)
     cited_sentences: list[dict] = []
@@ -807,8 +984,8 @@ def answer_question(question: str, index_dir: str, work_dir: str,
     loc_words: list[WordBox] = []
     loc_source = "none"
     evidence_valid = False
-    if not is_unanswerable:
-        if verified and cited_texts:
+    if not nothing_found:
+        if cited_texts and citation_info["status"] in ("ok", "partial"):
             from vvrag.ground.boxes import refine_box_to_quote
 
             quote_text = samples[0].quote or ""
@@ -843,7 +1020,7 @@ def answer_question(question: str, index_dir: str, work_dir: str,
             evidence_valid = bool(cited_sentences)
             loc_score = 1.0 if evidence_valid else 0.0
             loc_source = "sentence_ids"
-        elif visual_ok:
+        elif region_present:
             # Phase 9: the confirmed visual region is the evidence (chart/table/
             # figure). Falls through to the retrieval region when the reader
             # gave no box_frac.
@@ -906,19 +1083,18 @@ def answer_question(question: str, index_dir: str, work_dir: str,
     else:
         visual_margin = 0.0
 
-    # Phase 9 features: citation resolution + question-aware support
-    from vvrag.verify.support import answer_type_match as _answer_type_match
-
-    at_match = (_answer_type_match(question, answer)
-                if not is_unanswerable else None)
+    # Run 9 features: citation resolution + examiner verdict + details
     citation_resolved = {"none": 1.0, "ok": 1.0,
                          "partial": 0.5}.get(citation_info["status"], 0.0)
     if support_method.endswith("+type"):
         support_type = 1.0
-    elif support_method == "disabled":
-        support_type = 0.5
-    else:
+    elif support_method == "no_citation":
         support_type = 0.0
+    else:
+        support_type = 0.5
+    ex_supported = verdict_supported_value(
+        verdict if verdict is not None else examiner)
+    details_ok = 1.0 if details.get("ok", True) else 0.0
 
     feats = build_features(agreement=agr, entail_min=entail_min, retrieval_margin=margin,
                            heat_concentration=heat_conc, n_claims=len(samples[0].claims),
@@ -929,14 +1105,20 @@ def answer_question(question: str, index_dir: str, work_dir: str,
                            cited_is_top1=cited_is_top1,
                            visual_margin=visual_margin,
                            citation_resolved=citation_resolved,
-                           answer_type_match=at_match,
-                           support_type=support_type)
-    from vvrag.gate.fixed import apply_fixed
+                           support_type=support_type,
+                           examiner_ran=bool(examiner["ran"]),
+                           examiner_supported=ex_supported,
+                           quote_seen_match=float(examiner["quote_seen_match"]),
+                           details_ok=details_ok)
     from vvrag.gate.scorer import features_to_matrix, hand_weighted
 
     # confidence: calibrated scorer when available, else hand-weighted (#5)
     scorer, cal_tau = load_gate_artifacts(cfg)
-    score = hand_weighted(agr, entail_min, heat_conc, loc_score, evidence_valid, qscore)
+    score = hand_weighted(agr, entail_min, heat_conc, loc_score, evidence_valid,
+                          qscore, examiner_ran=bool(examiner["ran"]),
+                          examiner_supported=ex_supported,
+                          quote_seen_match=float(examiner["quote_seen_match"]),
+                          details_ok=details_ok)
     if scorer is not None:
         try:
             score = float(scorer.predict_score(features_to_matrix([feats]))[0])
@@ -951,27 +1133,30 @@ def answer_question(question: str, index_dir: str, work_dir: str,
     gate_effective = (gate if gate == "fixed"
                       or (gate in ("calibrated", "conformal") and cal_tau is not None)
                       else "none")
-    abstain_reason = ""
-    if is_unanswerable:
-        abstained = True
-        abstain_reason = "reader returned UNANSWERABLE"
-    elif gate_effective == "none":
-        abstained = False
-        # a failed quote/support/citation check still blocks a cited answer
-        if citation_info["status"] != "none" and not verified and not visual_ok:
-            abstained = True
-            abstain_reason = _unsupported_reason()
-    else:
-        abstained = not apply_fixed(score, tau)
-        abstain_reason = "" if not abstained else f"score {score:.3f} < tau {tau}"
-        if abstained and ((verified and evidence_valid) or visual_ok):
-            abstained = False
-            abstain_reason = "verifier rescue"
-        if not abstained and require_support and not verified and not visual_ok:
-            abstained = True
-            abstain_reason = _unsupported_reason()
+    # Run 9: the gate no longer decides abstention. Nothing found is the only
+    # abstention; every other answer is shown with its state + reason. The
+    # score/tau remain displayed confidence (s7 rules decide VERIFIED).
+    abstained = state == "nothing_found"
+    abstain_reason = state_reason if abstained else ""
 
     passages = closest_passages(question, sentences) if abstained else []
+
+    out_cfg = getattr(cfg, "output", None)
+    low_suffix = str(getattr(out_cfg, "low_confidence_suffix",
+                             "(not confident enough)"))
+    nothing_text = str(getattr(out_cfg, "nothing_found_text",
+                               "Nothing found in this document."))
+    state_labels = {
+        "verified": str(getattr(out_cfg, "verified_label", "Verified")),
+        "not_confident": str(getattr(out_cfg, "not_confident_label",
+                                     "Not confident enough")),
+        "nothing_found": str(getattr(out_cfg, "nothing_found_label",
+                                     "Nothing found")),
+    }
+    try:
+        reader_served_by = getattr(reader, "served_by", None)
+    except NameError:  # pragma: no cover - reader always bound here
+        reader_served_by = None
 
     return {
         "answer": answer,
@@ -979,15 +1164,32 @@ def answer_question(question: str, index_dir: str, work_dir: str,
         "abstain_reason": abstain_reason,
         "not_found": abstained,
         "verified": verified,
+        "state": state,
+        "state_label": state_labels.get(state, state),
+        "state_reason": state_reason,
+        "not_confident": state == "not_confident",
+        "low_confidence_suffix": low_suffix,
+        "nothing_found_text": nothing_text,
         "tier": tier,
         "citations": {"status": citation_info["status"],
                       "n_refs": citation_info["n_refs"],
                       "n_resolved": citation_info["n_resolved"],
                       "unresolved": citation_info["unresolved"]},
-        "visual_confirm": visual_confirm,
+        "visual_confirm": {"attempted": bool(examiner["ran"]),
+                           "method": examiner["served_by"],
+                           "verdict": bool(examiner["confirmed"]),
+                           "detail": examiner["problem"] or examiner["reason"]},
+        "examiner": examiner,
+        "examiner_served_by": examiner["served_by"],
+        "examiner_ran": bool(examiner["ran"]),
+        "independence_ok": bool(independence_ok),
+        "reader_served_by": reader_served_by or f"{provider}/{model or ''}",
+        "details": details,
         "support": {"score": round(float(support_score), 4),
                     "method": support_method,
-                    "require": require_support},
+                    "require": require_support,
+                    "warnings": support_warnings,
+                    "supported": bool(supported)},
         "score": round(score, 4),
         "tau": tau if gate_effective != "none" else 0.0,
         "gate_mode": gate_effective,
@@ -1000,9 +1202,8 @@ def answer_question(question: str, index_dir: str, work_dir: str,
         "evidence": {"doc_id": doc_id, "page": page,
                      "boxes": [list(b) for b in final_boxes],
                      "box_frac": [list(b) for b in final_frac],
-                     "sentence_ids": ([sid for _d, _p, sid in cited_refs]
-                                      if verified else []),
-                     "refs": ([list(r) for r in cited_refs] if verified else []),
+                     "sentence_ids": [sid for _d, _p, sid in cited_refs],
+                     "refs": [list(r) for r in cited_refs],
                      "pages": list(pages_evidence.values()),
                      "region_boxes": [list(b) for b in region_boxes],
                      "crop_text": crop_text, "crop_has_text": has_text,
@@ -1025,7 +1226,10 @@ def answer_question(question: str, index_dir: str, work_dir: str,
         "samples": [{"answer": s.answer, "quote": s.quote,
                      "sentence_ids": s.sentence_ids,
                      "sentence_refs": s.sentence_refs,
-                     "region": s.region} for s in samples],
+                     "region": s.region,
+                     "no_evidence": s.no_evidence,
+                     "found_in": s.found_in,
+                     "confidence": s.confidence} for s in samples],
         "features": feats.to_dict(),
         "api_calls": api_calls,
         "timings": {"total": round(time.time() - t0, 3), "reader": round(t_r, 3)},

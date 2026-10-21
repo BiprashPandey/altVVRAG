@@ -62,7 +62,7 @@ def test_citation_boxes_come_from_cited_sentence(monkeypatch, tmp_path):
     assert r["cited_sentences"][0]["text"] == target.text
 
 
-def test_bad_quote_triggers_retry_then_abstain(monkeypatch, tmp_path):
+def test_bad_quote_triggers_retry_then_not_confident(monkeypatch, tmp_path):
     raw = tmp_path / "raw"
     raw.mkdir()
     _write_pdf(raw)
@@ -90,16 +90,26 @@ def test_bad_quote_triggers_retry_then_abstain(monkeypatch, tmp_path):
                         reader_mode="live", n_samples=1, grounding="span",
                         gate="none", doc_id=doc_id)
     assert calls["n"] == 2  # original + one retry
-    assert r["abstained"] is True
-    # Run 8: veto reasons are specific; type mismatch on a money question is
-    # itself decisive, quote failure otherwise (both -> abstain).
-    assert ("quote" in r["abstain_reason"]
-            or "type" in r["abstain_reason"])
+    # Run 9 (guideline s7): a failed quote means "not confident enough" --
+    # the answer is still shown with its best source, never hidden.
+    assert r["abstained"] is False
+    assert r["state"] == "not_confident"
+    assert r["answer"] == "nonsense answer"
+    assert "quote" in r["state_reason"], r["state_reason"]
+    assert r["low_confidence_suffix"]
 
 
 def test_unanswerable_retry_recovers_ocr_noise_answer(monkeypatch, tmp_path):
-    # suggestion #7: reader first says UNANSWERABLE (OCR noise), but a corrective
-    # retry with the closest passages recovers a verifiable answer.
+    # suggestion #7 (legacy opt-in): reader first says UNANSWERABLE (OCR
+    # noise), but a corrective retry with the closest passages recovers a
+    # verifiable answer. retry_on_unanswerable now defaults to False; the
+    # wiring is exercised here with an explicit config.
+    import vvrag.config as config_mod
+
+    cfg = config_mod.AppConfig()
+    cfg.reader.retry_on_unanswerable = True
+    monkeypatch.setattr(config_mod, "load_config", lambda *a, **k: cfg)
+
     raw = tmp_path / "raw"
     raw.mkdir()
     _write_pdf(raw)
