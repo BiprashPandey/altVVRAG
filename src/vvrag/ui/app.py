@@ -157,6 +157,21 @@ function render(r){
   if(!ok&&r.state_reason)html+=`<p class="small">why not verified: ${esc(r.state_reason)}</p>`;
   const quote=(r.samples&&r.samples[0]&&r.samples[0].quote)||'';
   if(quote)html+=`<p class="small"><b>quote:</b> \u201c${esc(quote)}\u201d</p>`;
+  const claims=r.claims||[];
+  if(claims.length){
+   html+=`<p class="small"><b>claims</b></p><ul class="small">`;
+   claims.forEach(function(c,i){
+    const cl=c.label?` <span class="badge ${c.label==='supported'?'ok':'warn'}">${esc(c.label)}</span>`:'';
+    const cc=(c.confidence!==null&&c.confidence!==undefined)?` <span class="small">(conf ${esc(String(c.confidence))})</span>`:'';
+    const rsn=(c.reason&&c.label!=='supported')?` <span class="small">${esc(c.reason)}</span>`:'';
+    html+=`<li class="citem" data-ci="${i}">${esc(c.text||'')}${cl}${cc}${rsn}</li>`;
+   });
+   html+=`</ul>`;
+  }
+  const cr=(r.claim_regions||[]).find(x=>x.best);
+  if(cr&&cr.best){
+   html+=`<p class="small">best document candidate: "${esc(String(cr.best.text||'').slice(0,180))}" (score ${esc(String(cr.best_score||0))})</p>`;
+  }
   const ex=r.examiner||{};
   if(ex.ran)html+=`<p class="small">examiner: ${esc(ex.served_by||'')} -- ${ex.confirmed?'confirmed':'not confirmed'}${ex.quote_seen?('; saw \u201c'+esc(String(ex.quote_seen)).slice(0,120)+'\u201d'):''}${ex.problem?('; '+esc(ex.problem)):''}</p>`;
   else if(ex.error)html+=`<p class="small">examiner: could not run (${esc(ex.error)})</p>`;
@@ -167,6 +182,10 @@ function render(r){
   if(sw.length)html+=`<p class="small">${esc(sw[0])}</p>`;
   if(r.citations&&r.citations.status&&r.citations.status!=='none'&&r.citations.status!=='ok')
    html+=`<p class="small">citations: ${esc(r.citations.status)} (${r.citations.n_resolved}/${r.citations.n_refs} resolved)</p>`;
+  if(r.citation_check&&r.citation_check.ok===false)
+   html+=`<p class="small">citation precheck: cited text shares no content term with the claim${r.citation_check.numeric_sink?' (number-only region)':''}</p>`;
+  if((r.index_manifest_mismatches||[]).length)
+   html+=`<p class="small"><span class="badge bad">index mismatch</span> ${esc(r.index_manifest_mismatches[0])}</p>`;
  }
  html+=`<p class="small">page: ${ev.doc_id||'-'} p${ev.page??'-'} | crop text: ${esc((ev.crop_text||'')).slice(0,300)}</p>`;
  const cited=r.cited_sentences||[];
@@ -230,6 +249,18 @@ function setPage(k){
  if(cw)cw.style.display=(isPrim&&ev.crop_url)?'':'none';
  const wrap=document.getElementById('evwrap');if(!wrap)return;
  wrap.querySelectorAll('.sentbox').forEach(function(b){b.remove()});
+ wrap.querySelectorAll('.claimbox').forEach(function(b){b.remove()});
+ (ev.claim_boxes||[]).forEach(function(cb,ci){
+  if(!cb.box_frac||cb.doc_id!==pg.doc_id||cb.page!==pg.page)return;
+  const d=document.createElement('div');d.className='claimbox';d.dataset.ci=ci;
+  d.title='claim '+(ci+1)+' ['+(cb.label||'')+']: '+(cb.text||'');
+  d.style.position='absolute';d.style.border='2px dashed '+(cb.label==='supported'?'#188038':'#b06000');
+  d.style.boxSizing='border-box';d.style.pointerEvents='none';
+  d.style.left=(cb.box_frac[0]*100)+'%';d.style.top=(cb.box_frac[1]*100)+'%';
+  d.style.width=((cb.box_frac[2]-cb.box_frac[0])*100)+'%';
+  d.style.height=((cb.box_frac[3]-cb.box_frac[1])*100)+'%';
+  wrap.appendChild(d);
+ });
  (pg.cites||[]).forEach(function(ci){
   if(!ci.frac)return;
   const d=document.createElement('div');d.className='sentbox';d.dataset.i=ci.i;

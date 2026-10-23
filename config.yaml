@@ -45,10 +45,14 @@ verify:
   question_detail_check: "warn"         # Run 9 (s4.4): years/dates/units/entities
   mode: "examiner_shown"                # Run 9 (s4.3): examiner sees the claim on every answer
   examiner_provider: "groq"
-  examiner_models:                      # largest-first; probed at startup
-    - "qwen/qwen3.8-27b"
-    - "meta-llama/llama-4-maverick-17b-128e-instruct"
-    - "meta-llama/llama-4-scout-17b-16e-instruct"
+  examiner_models:                      # verify with models.list() before runs
+    - "qwen/qwen3.8-27b"                # only model confirmed working here
+  examiner_evidence: "page_and_region"  # region | page | page_and_region | text
+  require_citation_specific: true       # region itself must be the evidence
+  citation_min_terms: 1                 # shared content terms required
+  claim_level: true                     # per-claim labels + candidate crops
+  claim_level_max: 5                    # max claims listed to the examiner
+  claim_level_images: 1                 # page + at most 1 claim crop (free-tier token budget)
   examiner_max_tokens: 700
   examiner_temperature: 0.0
   examiner_quote_threshold: 0.6

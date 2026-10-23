@@ -310,8 +310,22 @@ def verified_stats(rows: list[dict], examiner_only: bool = False) -> dict:
     - answer_coverage: gold rows with a shown answer / gold rows (was 0.33)
     - source_accuracy: shown gold rows with source boxes/refs / shown gold rows
     - examiner_leniency: examiner-confirmed rows later judged wrong / confirmed
-    - probe_flag_rate: probes flagged (nothing_found OR not_confident) / probes
+    - verified_yield: verified / all answerable gold rows (not examiner-only)
+    - examiner_availability: gold rows with an examiner verdict / all gold
+    - details_block_rate_on_correct: correct gold rows blocked by details / correct
+    - probe_flag_rate: probes not VERIFIED / probes (almost automatic)
+    - probe_nothing_found_rate: probes ending in nothing_found / probes
+    - probe_answered_rate: probes with a shown answer / probes (the honest one)
     - false_verified_on_probes: probes reaching VERIFIED (the dangerous one)
+    - visual_verified_yield / visual_verified_precision: the P5 tier, kept
+      strictly separate from text-verified counts
+    - derived_citation_rate / derived_citation_precision: reader returned a
+      quote but no sentence_ids; a unique normalized match supplied the
+      citation (P3, auditable)
+    - citation_reject_rate: deterministic citation precheck rejected the
+      cited text (or a numeric-only page-number region)
+    - examiner_citation_specific_rate: examiner ran and judged the cited
+      region citation-specific
 
     ``examiner_only`` restricts the *gold* denominators to rows where the
     examiner actually ran. Rows with no examiner are ``not_confident`` by
@@ -340,6 +354,11 @@ def verified_stats(rows: list[dict], examiner_only: bool = False) -> dict:
     def _flagged(r):
         return not _verified(r)
 
+    def _nothing_found(r):
+        if r.get("state") is not None:
+            return r.get("state") == "nothing_found"
+        return bool(r.get("abstained"))
+
     correct = [r for r in gold if r.get("equiv_correct")]
     incorrect = [r for r in gold if not r.get("equiv_correct")]
     verified = [r for r in gold if _verified(r)]
@@ -353,6 +372,44 @@ def verified_stats(rows: list[dict], examiner_only: bool = False) -> dict:
     lenient = [r for r in confirmed if not r.get("equiv_correct")]
     probes_flagged = [r for r in probes if _flagged(r)]
     probes_verified = [r for r in probes if _verified(r)]
+    probes_answered = [r for r in probes if not _nothing_found(r)]
+    probes_nothing_found = [r for r in probes if _nothing_found(r)]
+    visual_verified = [r for r in gold_all if r.get("visual_verified")]
+    visual_verified_correct = [r for r in visual_verified
+                               if r.get("equiv_correct")]
+    probes_visual_verified = [r for r in probes if r.get("visual_verified")]
+    all_claims = []
+    for r in gold_all:
+        for c in (r.get("claims") or []):
+            if str(c.get("text", "") or "").strip():
+                all_claims.append(c)
+    supported_claims = [c for c in all_claims
+                        if c.get("label") == "supported"]
+    partial_claims = [c for c in all_claims
+                      if c.get("label") == "partially_supported"]
+    failed_claims = [c for c in all_claims
+                     if c.get("label") in ("insufficient", "unsupported")]
+    claim_checked = [c for c in all_claims if c.get("label")]
+    claim_specific = [c for c in claim_checked
+                      if c.get("citation_specific") is True]
+    derived = [r for r in gold_all
+               if (r.get("citations") or {}).get("derived_from_quote")]
+    derived_correct = [r for r in derived if r.get("equiv_correct")]
+    citation_checked = [r for r in gold_all
+                        if isinstance((r.get("citation_check") or {}).get("ok"),
+                                      bool)]
+    citation_rejected = [r for r in citation_checked
+                         if (r.get("citation_check") or {}).get("ok") is False]
+    numeric_sinks = [r for r in citation_checked
+                     if (r.get("citation_check") or {}).get("numeric_sink")]
+    examiner_ran = [r for r in gold_all if _ran_examiner(r)]
+    ex_citation = [r for r in examiner_ran
+                   if isinstance((r.get("examiner") or {}).get(
+                       "citation_specific"), bool)]
+    verified_all = [r for r in gold_all if _verified(r)]
+    correct_all = [r for r in gold_all if r.get("equiv_correct")]
+    details_blocked = [r for r in correct_all
+                       if (r.get("details") or {}).get("ok") is False]
 
     def _rate(x, n):
         return (len(x) / n) if n else None
@@ -371,6 +428,9 @@ def verified_stats(rows: list[dict], examiner_only: bool = False) -> dict:
         "verified_precision": _rate(verified_correct, len(verified)),
         "verified_precision_cp95": vp_cp,
         "n_verified": len(verified),
+        "verified_yield": _rate(verified_all, len(gold_all)),
+        "examiner_availability": _rate(examiner_ran, len(gold_all)),
+        "n_examiner_ran": len(examiner_ran),
         "flag_recall": _rate(flagged_incorrect, len(incorrect)),
         "unflagged_wrong_rate": _rate(
             [r for r in incorrect if not _flagged(r)], len(incorrect)),
@@ -378,6 +438,60 @@ def verified_stats(rows: list[dict], examiner_only: bool = False) -> dict:
         "source_accuracy": _rate(with_source, len(shown)),
         "examiner_leniency": _rate(lenient, len(confirmed)),
         "n_confirmed": len(confirmed),
+        "details_block_rate_on_correct": _rate(details_blocked, len(correct_all)),
+        "n_details_blocked": len(details_blocked),
         "probe_flag_rate": _rate(probes_flagged, len(probes)),
+        "probe_nothing_found_rate": _rate(probes_nothing_found, len(probes)),
+        "probe_answered_rate": _rate(probes_answered, len(probes)),
         "false_verified_on_probes": _rate(probes_verified, len(probes)),
+        "n_visual_verified": len(visual_verified),
+        "visual_verified_yield": _rate(visual_verified, len(gold_all)),
+        "visual_verified_precision": _rate(visual_verified_correct,
+                                           len(visual_verified)),
+        "false_visual_verified_on_probes": _rate(probes_visual_verified,
+                                                 len(probes)),
+        "n_derived_citations": len(derived),
+        "derived_citation_rate": _rate(derived, len(gold_all)),
+        "derived_citation_precision": _rate(derived_correct, len(derived)),
+        "n_citation_checked": len(citation_checked),
+        "citation_reject_rate": _rate(citation_rejected, len(citation_checked)),
+        "n_numeric_sink_rejected": len(numeric_sinks),
+        "examiner_citation_specific_rate": _rate(
+            [r for r in ex_citation
+             if (r.get("examiner") or {}).get("citation_specific") is True],
+            len(ex_citation)),
+        "n_claims": len(all_claims),
+        "n_claims_supported": len(supported_claims),
+        "claim_support_rate": _rate(supported_claims, len(all_claims)),
+        "claim_partial_rate": _rate(partial_claims, len(all_claims)),
+        "claim_failure_rate": _rate(failed_claims, len(all_claims)),
+        "claim_verification_rate": _rate(claim_checked, len(all_claims)),
+        "claim_citation_specific_rate": _rate(claim_specific,
+                                               len(claim_checked)),
+        "n_claim_failures": len(failed_claims),
     }
+
+
+def partial_answer_correct(
+    pred: str, golds: list[str], min_tokens: int = 2,
+    f1_threshold: float = 0.5,
+) -> bool:
+    """Report-only partial-answer credit (never replaces strict scoring).
+
+    A multi-token answer that is a subset/superset of an acceptable gold is a
+    correct fragment (e.g. "National Monitoring Committee" inside the full
+    oversight-committee gold). Single tokens are not credited unless the
+    number-normalized token-F1 clears `f1_threshold`, so "11" does not match
+    "12" by containment.
+    """
+    if equivalent_correct_norm(pred, golds):
+        return True
+    pt = _tokens(normalize_answer(pred))
+    if len(pt) < min_tokens:
+        return False
+    pset = set(pt)
+    for g in golds:
+        gset = set(_tokens(normalize_answer(g)))
+        if gset and (pset <= gset or gset <= pset):
+            return True
+    return equivalent_f1_norm(pred, golds) >= f1_threshold

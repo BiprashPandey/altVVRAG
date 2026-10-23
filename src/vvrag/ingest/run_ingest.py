@@ -78,14 +78,17 @@ def run_ingest(
         )
         eq.load()
     elif embedder == "fake":
+        model_id = "fake"
         fake = embed_mod.FakePatchEmbedder()
     else:
         raise ValueError(f"unknown embedder: {embedder}")
 
     con = index_mod.connect_sqlite(out_dir / "meta.db")
     done = index_mod.indexed_pages(con)
+    previous_manifest = index_mod.get_manifest(con)
     client = None
-    dim = 32 if embedder == "fake" else None
+    dim = 32 if embedder == "fake" else (
+        previous_manifest.get("embedding_dim") or None)
     stats = {"docs": 0, "pages": 0, "skipped": 0, "ocr_pages": 0}
 
     for f in files:
@@ -170,6 +173,12 @@ def run_ingest(
             done.add(key)
             stats["pages"] += 1
 
+    if client is None and previous_manifest:
+        # Resume with every page already done: keep the previous vector
+        # provenance instead of recording None for the model/dim/counts.
+        dim = dim or previous_manifest.get("embedding_dim")
+        if embedder != "fake" and not model_id:
+            model_id = previous_manifest.get("embedding_model") or model_id
     manifest = {
         "timestamp": dt.datetime.now(dt.timezone.utc).isoformat(),
         "input": str(input_dir),
@@ -177,10 +186,30 @@ def run_ingest(
         "word_boxes": index_mod.count_word_boxes(con),
         "sentences": index_mod.count_sentences(con),
         "sqlite_pages": index_mod.count_pages(con),
+        "schema_version": index_mod.SCHEMA_VERSION,
+        "embedding_model": model_id or embedder,
+        "embedding_dim": dim,
+        "dpi": dpi,
+        "collection_full": collection_full,
+        "collection_pooled": collection_pooled,
     }
     if client is not None:
         manifest["qdrant_full"] = index_mod.count_points(client, collection_full)
         manifest["qdrant_pooled"] = index_mod.count_points(client, collection_pooled)
+    else:
+        manifest["qdrant_full"] = previous_manifest.get("qdrant_full")
+        manifest["qdrant_pooled"] = previous_manifest.get("qdrant_pooled")
+    index_mod.set_manifest(con, {
+        "schema_version": manifest["schema_version"],
+        "embedding_model": manifest["embedding_model"],
+        "embedding_dim": manifest["embedding_dim"],
+        "dpi": manifest["dpi"],
+        "collection_full": collection_full,
+        "collection_pooled": collection_pooled,
+        "qdrant_full": manifest.get("qdrant_full"),
+        "qdrant_pooled": manifest.get("qdrant_pooled"),
+        "pages": manifest["sqlite_pages"],
+    })
     (out_dir / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     log.info("ingest done: %s", json.dumps(manifest, indent=2))
     return manifest
@@ -304,6 +333,8 @@ def main() -> None:
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--batch-size", type=int, default=1,
                     help="GPU embed batch (auto-halved on CUDA OOM)")
+    ap.add_argument("--qdrant-path", default="",
+                    help="Qdrant local dir (default: config qdrant.path)")
     ap.add_argument("--upscale", type=float, default=2.0,
                     help="image upscale factor before Tesseract (Phase 5a)")
     ap.add_argument("--reocr", action="store_true",
@@ -348,7 +379,7 @@ def main() -> None:
         collection_full=cfg.qdrant.collection_full,
         collection_pooled=cfg.qdrant.collection_pooled,
         qdrant_mode=cfg.qdrant.mode,
-        qdrant_path=cfg.qdrant.path,
+        qdrant_path=args.qdrant_path or cfg.qdrant.path,
         batch_size=args.batch_size,
         upscale=args.upscale,
         vlm_transcribe_empty=args.vlm_transcribe_empty,

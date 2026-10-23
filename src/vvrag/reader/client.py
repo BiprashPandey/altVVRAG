@@ -391,16 +391,30 @@ class RotatingKeyReader(ReaderClient):
 
 GEMINI_KEY_ENV_NAMES = ("GEMINI_API_KEY", *[f"GEMINI_API_KEY{i}" for i in range(2, 10)],
                         *[f"GEMINI_API_KEY_{i}" for i in range(2, 10)])
+GROQ_KEY_ENV_NAMES = ("GROQ_API_KEY", *[f"GROQ_API_KEY{i}" for i in range(2, 10)],
+                      *[f"GROQ_API_KEY_{i}" for i in range(2, 10)])
 
 
-def _gemini_keys(env_fn) -> list[str]:
-    """All distinct Gemini keys present in the environment (order preserved)."""
+def _provider_keys(env_fn, names) -> list[str]:
+    """All distinct provider keys present (order preserved)."""
     keys: list[str] = []
-    for name in GEMINI_KEY_ENV_NAMES:
+    for name in names:
         v = env_fn(name)
         if v and v not in keys:
             keys.append(v)
     return keys
+
+
+def _gemini_keys(env_fn) -> list[str]:
+    return _provider_keys(env_fn, GEMINI_KEY_ENV_NAMES)
+
+
+def _groq_keys(env_fn) -> list[str]:
+    keys = _provider_keys(env_fn, GROQ_KEY_ENV_NAMES)
+    # Groq project keys start with gsk_; other providers' keys placed under a
+    # GROQ_* alias must not be rotated in (they would only cause 401s).
+    groq_only = [k for k in keys if k.startswith("gsk_")]
+    return groq_only or keys
 
 
 def _build_reader(provider: str, model: str, max_output_tokens: int) -> ReaderClient:
@@ -418,10 +432,13 @@ def _build_reader(provider: str, model: str, max_output_tokens: int) -> ReaderCl
             return GeminiReader(model, keys[0], max_output_tokens)
         return RotatingKeyReader(model, keys, max_output_tokens)
     if provider == "groq":
-        key = env("GROQ_API_KEY")
-        if not key:
+        keys = _groq_keys(env)
+        if not keys:
             raise RuntimeError("GROQ_API_KEY missing (see .env.example)")
-        return GroqReader(model, key, max_output_tokens)
+        if len(keys) == 1:
+            return GroqReader(model, keys[0], max_output_tokens)
+        return RotatingKeyReader(model, keys, max_output_tokens,
+                                 reader_cls=GroqReader)
     if provider == "openrouter":
         key = env("OPENROUTER_API_KEY")
         if not key:

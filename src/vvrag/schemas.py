@@ -144,22 +144,125 @@ class Evidence:
 
 
 @dataclass
+class GroundedRegion:
+    """A document-backed evidence region for one claim.
+
+    Coordinates are rendered-page pixels; `box_frac` is normalized to the
+    displayed page (0-1). `modality` is text or visual and `resolution`
+    records how fine the selected candidate is. A region is never drawn from
+    model pixels: it is a selected document box or a reader region that still
+    has to pass the verifier.
+    """
+    doc_id: str
+    page: int
+    box: tuple[int, int, int, int]
+    box_frac: tuple[float, float, float, float]
+    text: str = ""
+    modality: str = "text"       # text | visual
+    resolution: str = "sentence"  # word | line | sentence | block | cell | region
+    score: float = 0.0
+    source: str = ""             # span | snap | reader | sentence
+
+    def to_dict(self) -> dict:
+        return {
+            "doc_id": self.doc_id,
+            "page": self.page,
+            "box": list(self.box),
+            "box_frac": list(self.box_frac),
+            "text": self.text,
+            "modality": self.modality,
+            "resolution": self.resolution,
+            "score": self.score,
+            "source": self.source,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "GroundedRegion":
+        d = dict(d or {})
+        box = tuple(d.get("box") or (0, 0, 0, 0))
+        frac = tuple(d.get("box_frac") or (0.0, 0.0, 0.0, 0.0))
+        return cls(
+            doc_id=str(d.get("doc_id", "")),
+            page=int(d.get("page", 0)),
+            box=box,  # type: ignore[arg-type]
+            box_frac=frac,  # type: ignore[arg-type]
+            text=str(d.get("text", "")),
+            modality=str(d.get("modality", "text")),
+            resolution=str(d.get("resolution", "sentence")),
+            score=float(d.get("score", 0.0) or 0.0),
+            source=str(d.get("source", "")),
+        )
+
+
+@dataclass
 class Claim:
     text: str
     answer_span: str | None = None
     evidence_sentence_ids: list[int] | None = None
+    # Visual-RAG contract (2026-10-22): every claim carries its own regions
+    # and verifier outcome. Defaults keep older cached reader outputs valid.
+    regions: list[GroundedRegion] = field(default_factory=list)
+    label: str = ""              # supported | partially_supported | insufficient | unsupported
+    reason: str = ""
+    confidence: float | None = None
+    citation_specific: bool | None = None
+    withheld: bool = False
 
     def to_dict(self) -> dict:
-        return asdict(self)
+        d = asdict(self)
+        d["regions"] = [r.to_dict() for r in self.regions]
+        return d
 
     @classmethod
     def from_dict(cls, d: dict) -> "Claim":
         d = dict(d)
         # legacy word-id fields are NOT mapped: word indices are not sentence
         # ids; old cached outputs simply have no valid citations.
+        regions = [GroundedRegion.from_dict(r)
+                   for r in (d.get("regions") or [])]
         return cls(text=str(d.get("text", "")),
                    answer_span=d.get("answer_span"),
-                   evidence_sentence_ids=d.get("evidence_sentence_ids"))
+                   evidence_sentence_ids=d.get("evidence_sentence_ids"),
+                   regions=regions,
+                   label=str(d.get("label", "") or ""),
+                   reason=str(d.get("reason", "") or ""),
+                   confidence=d.get("confidence"),
+                   citation_specific=d.get("citation_specific"),
+                   withheld=bool(d.get("withheld", False)))
+
+
+@dataclass
+class Answer:
+    """Interactive answer contract: every claim is retained, including ones
+    the verifier marked not confident. Display policy is separate."""
+    question: str
+    text: str
+    claims: list[Claim] = field(default_factory=list)
+    state: str = "not_confident"
+    state_reason: str = ""
+    verified: bool = False
+    nothing_found: bool = False
+
+    def to_dict(self) -> dict:
+        return {
+            "question": self.question,
+            "text": self.text,
+            "claims": [c.to_dict() for c in self.claims],
+            "state": self.state,
+            "state_reason": self.state_reason,
+            "verified": self.verified,
+            "nothing_found": self.nothing_found,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "Answer":
+        return cls(question=str(d.get("question", "")),
+                   text=str(d.get("text", "")),
+                   claims=[Claim.from_dict(c) for c in d.get("claims", [])],
+                   state=str(d.get("state", "not_confident")),
+                   state_reason=str(d.get("state_reason", "")),
+                   verified=bool(d.get("verified", False)),
+                   nothing_found=bool(d.get("nothing_found", False)))
 
 
 @dataclass

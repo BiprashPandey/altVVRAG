@@ -1,13 +1,11 @@
 # altVRAG — Complete Pipeline Summary
 
-Status date: 2026-10-21 (rev 5, Run 9 live validation — the three-state
-answer contract, the independent examiner, the 18-column gate feature order,
-question-detail warnings, deterministic reranking + bridge pages, and
-table-aware citation units). Model A + hybrid are complete; model B is
-partial because its free-tier quota was still exhausted. This document describes the
-system as it exists in the working tree, distinguishing carefully between
-what is wired into the live answer path, what exists but is not yet wired,
-and what is a stand-in.
+Status date: 2026-10-23 (rev 7, frozen3 pre-registered set built — 25 decks,
+120 gold, 60 verified-absent probes; real ColQwen index/query cache pending a
+Colab GPU run; see section 24). This
+document describes the system as it exists in the working tree, distinguishing
+carefully between what is wired into the live answer path, what exists but is
+not yet wired, and what is a stand-in.
 
 ---
 
@@ -1443,3 +1441,238 @@ backup). Report: `testRun9.pdf` (2.2 MB).
 - **Model B**: free-tier quota was still exhausted; 53 rows remain
   PENDING/quota errors. Resume with
   `python scripts/run_test8.py --resume results/demo/testrun8_20261019_141118 --resume-models gemini-3.8-flash`.
+
+---
+
+## 21. Revision 5 — dev Run 10 + Session 9 fixes
+
+Dev Run 10 (2026-10-22, keyword + `gemini-3.5-flash-lite`, 81 rows, 0
+errors): dir `results/demo/testrun8_20261022_161934`, report
+`testRun10.pdf`.
+
+| metric | value |
+|---|---|
+| strict (verified) | 0.225 (9/40) |
+| shown correct | 0.700 (28/40) |
+| false abstention | 0.225 (9/40) |
+| page_hit@1 / MRR | 0.700 / 0.858 |
+| verified precision | **1.000 (9/9)** |
+| probe answered | 0.122 (5/41) |
+| probe nothing_found | 0.878 |
+| false verified on probes | 0.000 |
+| examiner availability (answered gold) | 30/31 = 96.8% |
+| visual-verified (separate tier) | 3/3 correct |
+| derived citations | 1/1 correct |
+
+- **Label audit**: the Alcatel tagline item now accepts the on-slide title
+  `ALCATEL-LUCENT OVERVIEW 2012`; idx17 verified correctly, idx18 became
+  correct after the tiny-crop examiner fix (below). Report before/after.
+- **Examiner crop fix**: Groq rejects images <32 px. `_check_img` now tries
+  `region_crop` -> `answer_crop` -> padded `sentence_crop` -> page; targeted
+  retry `results/demo/retry_idx18_cropfix` is VERIFIED with the sentence crop.
+- **Impossible durations**: a question asking for a 20-year average when the
+  corpus only contains a 10-year average now routes to `nothing_found`
+  (`impossible_durations`, analogous to `impossible_years`). Validated:
+  probe idx53 abstains, gold idx8 (10-year) still verifies.
+- **Negative P6 result**: appending the bridge page as a 4th context page
+  (instead of evicting) made idx1 answer `+90 bps` (wrong) where it had
+  honestly abstained; idx3/20 still abstained, idx5/14 unchanged. Reverted.
+  Multi-hop needs table/structured citation units, not more page text.
+- Full suite: **180 collected, 179 passed, 1 skipped, EXIT=0**.
+
+---
+
+## 22. Revision 6 — research-plan Phase A/B/C (offline, 2026-10-22)
+
+Started the report-parity refactor from `researchGuide.md`; all changes below
+are offline/unit-tested (no live API rerun yet).
+
+- **Contracts (`schemas.py`)**: `GroundedRegion` (pixel + normalized box,
+  text/visual modality, resolution, source); `Claim` now carries per-claim
+  `regions`, label/reason/confidence, `citation_specific`, `withheld`;
+  `Answer` carries question/text/claims/state/verified. Legacy fields remain.
+- **Index provenance (`ingest/index.py`)**: `index_manifest` SQLite table,
+  `SCHEMA_VERSION=2`, `set_manifest/get_manifest/manifest_mismatches`.
+  `run_ingest` writes model, dim, dpi, collections, counts and pages; resume
+  preserves previous provenance when all pages are skipped. `answer_question`
+  reports `index_manifest` + `index_manifest_mismatches` (display warning,
+  not a silent trust decision).
+- **Citation-specific verification**: examiner evidence mode now defaults to
+  `page_and_region` (full page + zoomed/highlighted region). The prompt asks
+  for `citation_specific` and `region_supports`; VERIFIED requires both when
+  `verify.require_citation_specific` is true. A deterministic precheck
+  (`verify/citation.py`, number/name-aware shared-term overlap) downgrades a
+  citation that shares no content term with the claim, including the measured
+  page-number-sink failure; it remains shown as `not_confident`.
+- **True visual candidate scope**: `retriever.visual_scope: all` scores every
+  embedded page (not just keyword-surfaced pages), then fuses keyword + visual
+  ranks; words are loaded only for surviving pages. The existing honest
+  cache-miss/CPU keyword fallback is unchanged.
+- **Deterministic grounding candidates**: `ground/candidates.py` builds and
+  lexically ranks sentence, table-row/cell, word-line, and reader-region
+  candidates per claim. `answer_question` exposes `claim_regions` (top-5 +
+  best) and the examiner's region crop prefers that best candidate; final
+  display boxes still use the existing cited-sentence/quote path until the
+  next phase. Harness rows carry `citation_check`, `claim_regions`, and
+  `index_manifest_mismatches`.
+- Viewer shows claims + best document candidate, citation-specific failure, and index-mismatch warnings. Metrics report `citation_reject_rate`, numeric-sink rejections, and examiner citation-specific rate.
+- New/updated tests: `test_citation.py`, `test_ground_candidates.py`,
+  citation-specific examiner cases, schema round-trips, manifest provenance,
+  full-corpus visual promotion, page-number citation rejection.
+- **Suite**: 197 collected, 196 passed, 1 skipped, EXIT=0.
+
+Not yet done: live rerun after these changes; claim-level verifier needs to
+judge `claim_regions` (currently the examiner still scores the sample quote);
+UI claim-by-claim streaming; calibration/eval refit. Superseded by section 23,
+which executes the frozen pilot and wires claim regions into the examiner.
+
+
+---
+
+## 23. Frozen deck-disjoint pilot (live, 2026-10-22)
+
+Full results: `FROZEN_RESULTS.md`; pre-registration: `PREREGISTRATION.md`;
+report: `frozen_eval.pdf`; rows:
+`results/demo/testrun8_20261022_214946/rows.json`.
+
+### Setup
+
+- 6 new SlideVQA decks / 120 pages, excluded from the 8 dev decks; index
+  `data/index_frozen2` with fake 32-d embeddings and keyword retrieval only.
+- 28 gold (22 single-hop, 5 multi-hop, 1 image-only) + 19 verified-absent
+  probes. Frozen gold audit: 14 ok, 8 short-answer, 5 OCR-typo, 1 image-only,
+  no page mismatches after correction.
+- Reader: Gemini 3.5 Flash Lite; one sample/item; examiner: Gemini 3.5 Flash
+  Lite with **same-family** examiner (`config.pilot.yaml`,
+  `independence_required: false`) because the independent Groq free tier was
+  exhausted. This is a pipeline pilot, not independent verification.
+- 47/47 rows, 0 errors. The initial process hit the shell timeout after 29
+  rows; `--resume` completed the 18 pending rows.
+
+### Results (gold n=28, probes n=19)
+
+| metric | value |
+|---|---|
+| shown / coverage | 19/28 = 67.9% |
+| nothing found | 9/28 = 32.1% |
+| strict verified | 6/28 = 21.4% |
+| verified precision | 5/6 = 83.3% |
+| shown precision | 16/19 = 84.2% |
+| page_hit@1 / MRR | 50.0% / 0.783 |
+| examiner ran (answered gold) | 18/19 = 94.7% |
+| claim labels | 10 supported, 9 unsupported, 1 partial, 1 insufficient |
+| visual-verified | 0 (six region attempts rejected) |
+| probes nothing_found | 15/19 = 78.9% |
+| probes false-verified | 1/19 = 5.3% |
+
+### Main failure and correction
+
+- `frozen-unans-14` ("Old Act Section 4 in the New Act Section 12") was
+  **verified** with `11`; the cited row maps Section 4 to Section 11. This is
+  the question-constraint grounding gap, not a citation/parser error. It is a
+  real false-verified probe.
+- The one verified-but-wrong gold row is a correct fragment of a multi-part
+  gold ("National Monitoring Committee" vs the full committee + oversight
+  answer); exact-equivalence scoring penalises it. Report both strict and the
+  partial-answer caveat.
+- Post-run presentation fix: `tier="visual"` now requires
+  `visual_verified`; six old region attempts had been mislabeled visual even
+  though the examiner rejected them. The PDF recomputes visual-verified as 0;
+  answers, states, claims and probe verdicts were not changed.
+- Independent spot check: production config (Gemini reader + Groq Qwen
+  examiner) verified `idx=0` with claim 1/1 and citation-specific true. The
+  false-verified probe could not be re-checked independently because Groq TPD
+  returned 429; that check remains open.
+
+### Honest interpretation
+
+The pilot supports the claim that the claim-level pipeline runs end-to-end on
+unseen decks (47/47, 0 errors; 16/19 shown answers correct; 15/19 probes
+nothing-found). It does **not** support independent verification at scale, a
+zero-false-verified guarantee, stable estimates, or visual-grounding gains.
+The frozen set is 28+19, far below the 200-300 target; fake embeddings and
+keyword retrieval test the contract, not the visual retriever. Do not tune on
+this run. The next experiment is an independent-examiner rerun.
+
+Post-hoc fix (not part of the pilot table): `question_details.py` now extracts
+`Section N` / `Sec. N` / `§ N` and requires every referenced section number in
+the **cited sentence**. Offline replay changes exactly one frozen row, the
+false-verified probe (no gold rows); a live post-fix probe run is
+`not_confident` (`results/demo/testrun8_20261022_234533`). Because this was
+found on the pilot probe, the next evaluation must use a fresh frozen set.
+
+### Reproduce
+
+```
+VVRAG_CONFIG=config.pilot.yaml python scripts/run_test8.py   --index data/index_frozen2   --gold data/slidevqa_frozen2/gold.json   --probes data/slidevqa_frozen2/probes.json   --arms keyword --models gemini-3.5-flash-lite --n3 0
+python scripts/make_frozen_report.py <run_dir> frozen_eval.pdf   --config config.pilot.yaml
+```
+
+
+---
+
+## 24. Frozen3 — fresh pre-registered evaluation (built 2026-10-23, not yet run live)
+
+Protocol: `PREREGISTRATION_FROZEN3.md`; metadata/hashes:
+`data/slidevqa_frozen3/frozen_meta.json`; notebook:
+`notebooks/frozen3_colab.ipynb` (self-sufficient: clones `main`, no upload).
+
+### What is frozen
+
+- **25 SlideVQA decks / 500 pages / 120 gold QA / 60 verified-absent probes.**
+  The projected 12-deck/180-page subset was not achievable from the
+  `Ahren09/SlideVQA` mirror (test split yielded only 49 QA); the train split was
+  used instead. Dev and all `frozen2` decks are excluded.
+- Gold audit before the run: 67 ok, 35 short-answer, 7 OCR-typo, 9 partial,
+  2 image-only, **0 page mismatch** after 7 pre-run page corrections. 118
+  single-hop + 2 image-only; no multi-hop claim.
+- Probes: near-miss 15, absent-attribute 13, entity-swap 22, false-bridge 10.
+  Every `check_absent` string was verified absent from normalized local OCR.
+- Gold/probes/deck-ids/questions hashes are in `frozen_meta.json`; do not edit
+  them after the first live run.
+- Local index `data/index_frozen3_local` uses fake embeddings only for audit and
+  probe checks. The real `data/index_frozen3` + `data/query_cache_frozen3` are
+  built by the Colab notebook from the exact deck list.
+
+### Frozen system and arms
+
+- Reader: Gemini `gemini-3.5-flash-lite`, one sample per question (`--n3 0`).
+- Examiner: **text-only** Groq models in order `openai/gpt-oss-20b`,
+  `openai/gpt-oss-120b`, `qwen/qwen3.8-27b`
+  (`config.frozen3.text.yaml`); `examiner_evidence: text`,
+  `claim_level_images: 0`, `independence_required: true`,
+  `examiner_max_tokens: 2000` (700 truncated gpt-oss reasoning JSON).
+  Text-only confirmation still requires the deterministic citation precheck.
+- Arms on the same frozen index/reader: **keyword** (180 rows) and **hybrid**
+  (180 rows, full set with precomputed ColQwen query vectors; no 24-item
+  subset). Gate score is display-only.
+- The text-only examiner cannot verify visual-only claims; visual-verified
+  rows, if any, are reported separately and never counted as strict.
+
+### Validation before any live call
+
+- Full pytest passes after the code changes; a 180-row mock keyword run has
+  **0 errors** and the generic report builds (6 pages) with probes and partial
+  columns.
+- A real bug was found by this mock run and fixed: `scripts/run_test8.py`
+  referenced `per_line_iou` without importing it (29/180 errored rows before
+  the fix; 0 after).
+- `--check-cache --hybrid-all` correctly reports `0/180` until the Colab
+  bundle is extracted.
+
+### Reproduce
+
+```
+# Colab: run notebooks/frozen3_colab.ipynb (clones main; no upload)
+# then locally:
+VVRAG_CONFIG=config.frozen3.text.yaml python scripts/run_test8.py   --index data/index_frozen3 --gold data/slidevqa_frozen3/gold.json   --probes data/slidevqa_frozen3/probes.json --arms keyword   --models gemini-3.5-flash-lite --n3 0
+VVRAG_CONFIG=config.frozen3.text.yaml python scripts/run_test8.py   --index data/index_frozen3 --gold data/slidevqa_frozen3/gold.json   --probes data/slidevqa_frozen3/probes.json --arms hybrid --hybrid-all   --models gemini-3.5-flash-lite --query-cache data/query_cache_frozen3 --n3 0
+python scripts/make_frozen_report.py <run_dir> frozen_eval_frozen3.pdf   --set-dir data/slidevqa_frozen3 --config config.frozen3.text.yaml
+```
+
+### Honest status
+
+No frozen3 live result exists yet. The only current results are the `frozen2`
+pilot (pre-fix, same-family examiner) and the post-fix probe checks. Do not
+claim frozen3 improvement, visual-retrieval gains, or independent-examiner
+precision until the Colab bundle is run and the report is built.

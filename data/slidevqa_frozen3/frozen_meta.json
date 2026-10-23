@@ -1,0 +1,91 @@
+{
+  "name": "frozen3",
+  "built_at": "2026-10-23T13:04:13",
+  "protocol_note": "Fresh deck-disjoint frozen set built after the frozen2 pilot. Dev decks and all frozen2 decks are excluded. The 120 gold answers were audited and page-corrected before the run; the 60 probes were verified absent from the local OCR. The set is frozen before any model run.",
+  "n_decks": 25,
+  "n_pages": 500,
+  "n_gold": 120,
+  "n_probes": 60,
+  "gold_categories": {
+    "single-hop": 118,
+    "image-only": 2
+  },
+  "probe_categories": {
+    "near-miss": 15,
+    "absent-attribute": 13,
+    "entity-swap": 22,
+    "false-bridge": 10
+  },
+  "index_label": "data/index_frozen3 (real ColQwen built on Colab)",
+  "pages_with_ocr": 488,
+  "word_boxes": 26094,
+  "sentence_units": 7018,
+  "embedding": "ColQwen2 multivector (real index; local fake index used only for audit/probe checks)",
+  "audit": {
+    "ok": 67,
+    "short_answer": 35,
+    "ocr_typo": 7,
+    "partial": 9,
+    "image_only": 2
+  },
+  "gold_sha256": "2f993469e5b46d296389ee9b2b6a1c2f09e3394b12332f85333a482d5a3ab4cf",
+  "probes_sha256": "3f2768da23484f8cbbbc800a2bffc1d227590e047bd8484a87c7f88f35829c04",
+  "raw_sha256": {
+    "00mlearn2011glahn-111020092730-phpapp02_95.pdf": "24c9c3aa7e72d2ff677e14280bd469a2a74bdc7b742de6c26ff2a46715f44dbc",
+    "03172016-pressfinance-lafargeholcimfull-year-results2015analystpresentation-en0-160317065358_95.pdf": "655bf0dff7cc9c4d7d26551299d8eccbd792e1ab0b7875300d0ec49947f4ba44",
+    "03jongregg-150624022045-lva1-app6892_95.pdf": "35628b0d39c8288520279ba9026ded37be1a22984e5f2fa133b5d89447c731f0",
+    "1-160120162033_95.pdf": "143401f591084deb91cac2c3f0c398b8ec272ff000d6343fc8acee1d451460d0",
+    "10-design-ideas-simple-exciting-charts-for-business-presentations-140828000137-phpapp01_95.pdf": "eebc26d23dc2dc6269551b7639766648db49fca7b3ed23c28cab5a998b461f8b",
+    "11-reactionsofalcohols-wade7th-140409022905-phpapp01_95.pdf": "c11e5c54cb224c6416a611b6541243844ea82fb2dc7ec35eba8a9e3345d8af7d",
+    "160219-social-teaming-101-for-sales-professionals-final-160219191544_95.pdf": "9f793d238623735d72ce9fe79473af9878d48d7f14b67b3fc57083ccbb2c5ab3",
+    "1rnxxoutge4gmfftkliz-140615033824-phpapp02_95.pdf": "4b7a598246fde4ba7b85986a71507a220a02ff411fa16343223af45f562915b8",
+    "2-141210222854-conversion-gate02_95.pdf": "28deb050ffff02552c4acf0c41ca985f9ca4a862a7ee3faca3e86f4735e00dee",
+    "2014-thenextweb-smrf-nodexl-sna-socialmedianetworks-140502092744-phpapp01_95.pdf": "47d375c2ca5fa65b65c8fd4414838f2dedf85ad291933a0fc8f9dd6077aaa97b",
+    "2014realestatemarketupdateand2015forecastphilippinerealestate-150123020706-conversion-gate02_95.pdf": "63f1fdb775441a1994f26c58efaac0b60d3762ede2ff724d8192c23caf0d580e",
+    "2015-holiday-prediction-report-151027133029-lva1-app6892_95.pdf": "a8f6f8588b5df5121163cfd7a907de83fb101f0d7f040d53d87bbcabfdde4848",
+    "32boacqbs79b2nwa18k1-signature-196231be70c3023fe5be2687ddced8055fa698a74f2804631a340e01d16802eb-poli-151110142611-lva1-a.pdf": "5956d27d4c0a131ed9a4a027faec2bbb546cdc4d1603ce7147e65e06677e768a",
+    "45305-macpa-140506135017-phpapp01_95.pdf": "da1b9917b87c5883428dc97b393ddcb9012145558269da3d2d32a8d0356f08bb",
+    "50greatbrandedentertainmentexamples-131023135825-phpapp01_95.pdf": "539abe26dc777db1ccc2c5e6cef32ab42e8a9f0d7de3253bae42269d90624ba6",
+    "6n9am0tzrteffgtfhfo7-signature-a48386bef1d04116b4103d32995570754965fd332e3318eba086b83292751980-poli-140816080558-phpapp.pdf": "5365c4b8914ffa1ac8043f03b8f7de30d13810e42866fbe0be83d498de1905be",
+    "7predictionsaboutthefutureofmedia-151214192034_95.pdf": "cb087ddc61b62d39fb9e1f288015e7dee19161785ca0c578133bc213e9a16029",
+    "8g7gdo0qpor4joawymkw-signature-8e5009c9c4328c751847b33f09fb482f7d55e2e01e29ccb235452688b5650a46-poli-150630131654-lva1-a.pdf": "b951ea664e2fc35ccfada524d24546c6734f9dc5940495715f60cf3b0f42557c",
+    "a9e1f95c-4506-4f86-bf33-f273c8184d93-150312091151-conversion-gate01_95.pdf": "fdb58978632bd52775217cf5c645e023d1fdecbbd92f57d27084c127e65cce81",
+    "accel-india-ecommerce-mar14-140401225936-phpapp01_95.pdf": "636e965af2ce848a120d9fecb4920fed1b2bf27586795518e13a16d5cc038c73",
+    "adcrupak-151111030756-lva1-app6891_95.pdf": "0cbcd1d9eea4f963d0554c81970b94c72be3ec6c9653fa8395b5e8d431093fab",
+    "adidus-110910013919-phpapp01_95.pdf": "d1671fe00cca1a4ff7790c460596a9a8a70da94482a3aea1cb0beb2e5bb100cb",
+    "advbrandsxswfinal3-150317171325-conversion-gate01_95.pdf": "10c849ef255d0018e19e821b0304a9f31e863986295a9d30012694d0e0b1bf4e",
+    "aiims-ibs-advances-140315150647-phpapp01_95.pdf": "0e1065ee840052bf7393b758ed8d8342b322548682f5ad3a61ae9fb80cd443bb",
+    "akzonobelcmd2015tcm9-93597-151027140208-lva1-app6892_95.pdf": "bdc8d1926cc7b783bcc8dbb8e312efc49cb98d81764d883e41bf25f5541fa295"
+  },
+  "limitations": [
+    "The set has 25 decks and 500 pages, not the planned 200-300 gold items; it is a fixed-set evaluation, not a universal estimate.",
+    "The real visual index and query vectors must be built on Colab; the local index uses fake embeddings only for audit and probe verification.",
+    "The text-only independent examiner cannot verify visual-only claims; text and visual tiers are reported separately.",
+    "This is one frozen run; do not tune thresholds on it and then report it as held-out."
+  ],
+  "reproduce": [
+    "python scripts/prepare_slidevqa.py --out data/slidevqa_frozen3 --split train --decks-file data/slidevqa_frozen3/deck_ids.json --gold-out gold_rebuilt.json --max-rows 20000 --n-decks 9999 --n-qa 0",
+    "python -m vvrag.ingest.run_ingest --input data/slidevqa_frozen3/raw --out data/index_frozen3_local --embedder fake --qdrant-path data/index_frozen3_local/qdrant --device cpu",
+    "python scripts/audit_gold.py --index data/index_frozen3_local --gold data/slidevqa_frozen3/gold.json --out results/frozen3_gold_audit_postcorrection.json",
+    "python scripts/prepare_frozen_probes.py --index data/index_frozen3_local --gold data/slidevqa_frozen3/gold.json --out data/slidevqa_frozen3/probes.json --n 60",
+    "VVRAG_CONFIG=config.frozen3.text.yaml python scripts/run_test8.py --index data/index_frozen3 --gold data/slidevqa_frozen3/gold.json --probes data/slidevqa_frozen3/probes.json --arms keyword --models gemini-3.5-flash-lite --n3 0",
+    "VVRAG_CONFIG=config.frozen3.text.yaml python scripts/run_test8.py --index data/index_frozen3 --gold data/slidevqa_frozen3/gold.json --probes data/slidevqa_frozen3/probes.json --arms hybrid --hybrid-all --models gemini-3.5-flash-lite --query-cache data/query_cache_frozen3 --n3 0",
+    "python scripts/make_frozen_report.py <run_dir> frozen_eval_frozen3.pdf --set-dir data/slidevqa_frozen3 --config config.frozen3.text.yaml"
+  ],
+  "deck_ids_sha256": "f9f2011250eec131b7b30e90fde82fb52475ea06432c48785eb8c9db37a3357d",
+  "questions_all_sha256": "016b9df22f41262a7b98795db5f1b987eab81e15fff3395cd7ac516a6788eb88",
+  "n_questions": 180,
+  "local_audit": "results/frozen3_gold_audit_postcorrection.json",
+  "n_corrected_pages": 7,
+  "note": "raw PDF hashes identify the local frozen PDFs; the Colab notebook rematerializes from deck_ids.json and verifies 25 decks/500 pages before indexing. Do not edit gold/probes/deck_ids after the first run.",
+  "local_keyword_baseline": {
+    "page_hit@1": 0.333,
+    "page_hit@3": 0.525,
+    "page_hit@5": 0.633,
+    "mrr": 0.461,
+    "n": 120,
+    "note": "local fake-embedding index; keyword only; not a live result"
+  },
+  "local_keyword_validation": "results/frozen3_local_keyword_validation.json",
+  "eol": "lf"
+}

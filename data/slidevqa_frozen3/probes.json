@@ -1,0 +1,844 @@
+[
+  {
+    "qid": "frozen3-unans-00",
+    "question": "How did the company perform in November 2022?",
+    "answer": "UNANSWERABLE",
+    "acceptable_answers": [],
+    "doc_id": null,
+    "page": null,
+    "category": "unanswerable",
+    "probe_category": "near-miss",
+    "check_absent": [
+      "november 2022"
+    ],
+    "why": "month outside the corpus"
+  },
+  {
+    "qid": "frozen3-unans-01",
+    "question": "How many customers were added in August 2021?",
+    "answer": "UNANSWERABLE",
+    "acceptable_answers": [],
+    "doc_id": null,
+    "page": null,
+    "category": "unanswerable",
+    "probe_category": "near-miss",
+    "check_absent": [
+      "august 2021"
+    ],
+    "why": "month outside the corpus"
+  },
+  {
+    "qid": "frozen3-unans-02",
+    "question": "How many users were active in January 2024?",
+    "answer": "UNANSWERABLE",
+    "acceptable_answers": [],
+    "doc_id": null,
+    "page": null,
+    "category": "unanswerable",
+    "probe_category": "near-miss",
+    "check_absent": [
+      "january 2024"
+    ],
+    "why": "future month outside the corpus"
+  },
+  {
+    "qid": "frozen3-unans-03",
+    "question": "What changed in February 2018?",
+    "answer": "UNANSWERABLE",
+    "acceptable_answers": [],
+    "doc_id": null,
+    "page": null,
+    "category": "unanswerable",
+    "probe_category": "near-miss",
+    "check_absent": [
+      "february 2018"
+    ],
+    "why": "month outside the corpus"
+  },
+  {
+    "qid": "frozen3-unans-04",
+    "question": "What is the percentage of the company's 20-year annual average real internal growth?",
+    "answer": "UNANSWERABLE",
+    "acceptable_answers": [],
+    "doc_id": null,
+    "page": null,
+    "category": "unanswerable",
+    "probe_category": "near-miss",
+    "check_absent": [
+      "20 year",
+      "20year"
+    ],
+    "why": "shadows a 10-year average"
+  },
+  {
+    "qid": "frozen3-unans-05",
+    "question": "What was the annual result in October 1999?",
+    "answer": "UNANSWERABLE",
+    "acceptable_answers": [],
+    "doc_id": null,
+    "page": null,
+    "category": "unanswerable",
+    "probe_category": "near-miss",
+    "check_absent": [
+      "october 1999"
+    ],
+    "why": "month outside the corpus"
+  },
+  {
+    "qid": "frozen3-unans-06",
+    "question": "What was the global smartphone penetration rate in March 2024?",
+    "answer": "UNANSWERABLE",
+    "acceptable_answers": [],
+    "doc_id": null,
+    "page": null,
+    "category": "unanswerable",
+    "probe_category": "near-miss",
+    "check_absent": [
+      "march 2024"
+    ],
+    "why": "future month outside the corpus"
+  },
+  {
+    "qid": "frozen3-unans-07",
+    "question": "What was the margin in December 2025?",
+    "answer": "UNANSWERABLE",
+    "acceptable_answers": [],
+    "doc_id": null,
+    "page": null,
+    "category": "unanswerable",
+    "probe_category": "near-miss",
+    "check_absent": [
+      "december 2025"
+    ],
+    "why": "future month outside the corpus"
+  },
+  {
+    "qid": "frozen3-unans-08",
+    "question": "What was the retention rate in June 2020?",
+    "answer": "UNANSWERABLE",
+    "acceptable_answers": [],
+    "doc_id": null,
+    "page": null,
+    "category": "unanswerable",
+    "probe_category": "near-miss",
+    "check_absent": [
+      "june 2020"
+    ],
+    "why": "month outside the corpus"
+  },
+  {
+    "qid": "frozen3-unans-09",
+    "question": "What was the revenue growth in March 2024?",
+    "answer": "UNANSWERABLE",
+    "acceptable_answers": [],
+    "doc_id": null,
+    "page": null,
+    "category": "unanswerable",
+    "probe_category": "near-miss",
+    "check_absent": [
+      "march 2024"
+    ],
+    "why": "future month outside the corpus"
+  },
+  {
+    "qid": "frozen3-unans-10",
+    "question": "Which OS was used more among mobile Facebook users in November 2014, Android or Windows Mobile?",
+    "answer": "UNANSWERABLE",
+    "acceptable_answers": [],
+    "doc_id": null,
+    "page": null,
+    "category": "unanswerable",
+    "probe_category": "near-miss",
+    "check_absent": [
+      "november 2014"
+    ],
+    "why": "shadows an October 2014 OS table"
+  },
+  {
+    "qid": "frozen3-unans-11",
+    "question": "Which are the bigger Debts to be repaid, Provincial-level government debts or Municipal-level government debts in June 2012?",
+    "answer": "UNANSWERABLE",
+    "acceptable_answers": [],
+    "doc_id": null,
+    "page": null,
+    "category": "unanswerable",
+    "probe_category": "near-miss",
+    "check_absent": [
+      "june 2012"
+    ],
+    "why": "shadows a June 2013 debt table"
+  },
+  {
+    "qid": "frozen3-unans-12",
+    "question": "Which country had the higher percentage of Tablet Pageviews in July 2014, Russia or Hungary?",
+    "answer": "UNANSWERABLE",
+    "acceptable_answers": [],
+    "doc_id": null,
+    "page": null,
+    "category": "unanswerable",
+    "probe_category": "near-miss",
+    "check_absent": [
+      "july 2014"
+    ],
+    "why": "shadows a June 2014 tablet table"
+  },
+  {
+    "qid": "frozen3-unans-13",
+    "question": "Which product led the market in September 1998?",
+    "answer": "UNANSWERABLE",
+    "acceptable_answers": [],
+    "doc_id": null,
+    "page": null,
+    "category": "unanswerable",
+    "probe_category": "near-miss",
+    "check_absent": [
+      "september 1998"
+    ],
+    "why": "month outside the corpus"
+  },
+  {
+    "qid": "frozen3-unans-14",
+    "question": "Which segment performed best in July 2019?",
+    "answer": "UNANSWERABLE",
+    "acceptable_answers": [],
+    "doc_id": null,
+    "page": null,
+    "category": "unanswerable",
+    "probe_category": "near-miss",
+    "check_absent": [
+      "july 2019"
+    ],
+    "why": "month outside the corpus"
+  },
+  {
+    "qid": "frozen3-unans-15",
+    "question": "How many employees were there in 1992?",
+    "answer": "UNANSWERABLE",
+    "acceptable_answers": [],
+    "doc_id": null,
+    "page": null,
+    "category": "unanswerable",
+    "probe_category": "absent-attribute",
+    "check_absent": [
+      "1992"
+    ],
+    "why": "year outside the corpus"
+  },
+  {
+    "qid": "frozen3-unans-16",
+    "question": "How many patents were filed in 1998?",
+    "answer": "UNANSWERABLE",
+    "acceptable_answers": [],
+    "doc_id": null,
+    "page": null,
+    "category": "unanswerable",
+    "probe_category": "absent-attribute",
+    "check_absent": [
+      "1998"
+    ],
+    "why": "year outside the corpus"
+  },
+  {
+    "qid": "frozen3-unans-17",
+    "question": "How many stores existed in 1997?",
+    "answer": "UNANSWERABLE",
+    "acceptable_answers": [],
+    "doc_id": null,
+    "page": null,
+    "category": "unanswerable",
+    "probe_category": "absent-attribute",
+    "check_absent": [
+      "1997"
+    ],
+    "why": "year outside the corpus"
+  },
+  {
+    "qid": "frozen3-unans-18",
+    "question": "How many users are expected in 2027?",
+    "answer": "UNANSWERABLE",
+    "acceptable_answers": [],
+    "doc_id": null,
+    "page": null,
+    "category": "unanswerable",
+    "probe_category": "absent-attribute",
+    "check_absent": [
+      "2027"
+    ],
+    "why": "future year outside the corpus"
+  },
+  {
+    "qid": "frozen3-unans-19",
+    "question": "What is the forecast for 2026?",
+    "answer": "UNANSWERABLE",
+    "acceptable_answers": [],
+    "doc_id": null,
+    "page": null,
+    "category": "unanswerable",
+    "probe_category": "absent-attribute",
+    "check_absent": [
+      "2026"
+    ],
+    "why": "future year outside the corpus"
+  },
+  {
+    "qid": "frozen3-unans-20",
+    "question": "What is the plan for 2028?",
+    "answer": "UNANSWERABLE",
+    "acceptable_answers": [],
+    "doc_id": null,
+    "page": null,
+    "category": "unanswerable",
+    "probe_category": "absent-attribute",
+    "check_absent": [
+      "2028"
+    ],
+    "why": "future year outside the corpus"
+  },
+  {
+    "qid": "frozen3-unans-21",
+    "question": "What is the target for 2029?",
+    "answer": "UNANSWERABLE",
+    "acceptable_answers": [],
+    "doc_id": null,
+    "page": null,
+    "category": "unanswerable",
+    "probe_category": "absent-attribute",
+    "check_absent": [
+      "2029"
+    ],
+    "why": "future year outside the corpus"
+  },
+  {
+    "qid": "frozen3-unans-22",
+    "question": "What was the advertising spend in March 2024?",
+    "answer": "UNANSWERABLE",
+    "acceptable_answers": [],
+    "doc_id": null,
+    "page": null,
+    "category": "unanswerable",
+    "probe_category": "absent-attribute",
+    "check_absent": [
+      "march 2024"
+    ],
+    "why": "future date outside the corpus"
+  },
+  {
+    "qid": "frozen3-unans-23",
+    "question": "What was the growth rate in 1998?",
+    "answer": "UNANSWERABLE",
+    "acceptable_answers": [],
+    "doc_id": null,
+    "page": null,
+    "category": "unanswerable",
+    "probe_category": "absent-attribute",
+    "check_absent": [
+      "1998"
+    ],
+    "why": "year outside the corpus"
+  },
+  {
+    "qid": "frozen3-unans-24",
+    "question": "What was the margin in 1996?",
+    "answer": "UNANSWERABLE",
+    "acceptable_answers": [],
+    "doc_id": null,
+    "page": null,
+    "category": "unanswerable",
+    "probe_category": "absent-attribute",
+    "check_absent": [
+      "1996"
+    ],
+    "why": "year outside the corpus"
+  },
+  {
+    "qid": "frozen3-unans-25",
+    "question": "What was the revenue in 1991?",
+    "answer": "UNANSWERABLE",
+    "acceptable_answers": [],
+    "doc_id": null,
+    "page": null,
+    "category": "unanswerable",
+    "probe_category": "absent-attribute",
+    "check_absent": [
+      "1991"
+    ],
+    "why": "year outside the corpus"
+  },
+  {
+    "qid": "frozen3-unans-26",
+    "question": "What was the revenue in March 2024?",
+    "answer": "UNANSWERABLE",
+    "acceptable_answers": [],
+    "doc_id": null,
+    "page": null,
+    "category": "unanswerable",
+    "probe_category": "absent-attribute",
+    "check_absent": [
+      "march 2024"
+    ],
+    "why": "future month outside the corpus"
+  },
+  {
+    "qid": "frozen3-unans-27",
+    "question": "Which are the bigger Debts to be repaid as of March 2019, Provincial-level government debts or Municipal-level government debts?",
+    "answer": "UNANSWERABLE",
+    "acceptable_answers": [],
+    "doc_id": null,
+    "page": null,
+    "category": "unanswerable",
+    "probe_category": "absent-attribute",
+    "check_absent": [
+      "march 2019"
+    ],
+    "why": "debt table shadow with absent date"
+  },
+  {
+    "qid": "frozen3-unans-28",
+    "question": "How many barrels did Shell produce?",
+    "answer": "UNANSWERABLE",
+    "acceptable_answers": [],
+    "doc_id": null,
+    "page": null,
+    "category": "unanswerable",
+    "probe_category": "entity-swap",
+    "check_absent": [
+      "shell"
+    ],
+    "why": "Shell never appears"
+  },
+  {
+    "qid": "frozen3-unans-29",
+    "question": "How many brands does Unilever own?",
+    "answer": "UNANSWERABLE",
+    "acceptable_answers": [],
+    "doc_id": null,
+    "page": null,
+    "category": "unanswerable",
+    "probe_category": "entity-swap",
+    "check_absent": [
+      "unilever"
+    ],
+    "why": "Unilever never appears"
+  },
+  {
+    "qid": "frozen3-unans-30",
+    "question": "How many cars did Mercedes sell?",
+    "answer": "UNANSWERABLE",
+    "acceptable_answers": [],
+    "doc_id": null,
+    "page": null,
+    "category": "unanswerable",
+    "probe_category": "entity-swap",
+    "check_absent": [
+      "mercedes"
+    ],
+    "why": "Mercedes never appears"
+  },
+  {
+    "qid": "frozen3-unans-31",
+    "question": "How many customers does Salesforce have?",
+    "answer": "UNANSWERABLE",
+    "acceptable_answers": [],
+    "doc_id": null,
+    "page": null,
+    "category": "unanswerable",
+    "probe_category": "entity-swap",
+    "check_absent": [
+      "salesforce"
+    ],
+    "why": "Salesforce never appears"
+  },
+  {
+    "qid": "frozen3-unans-32",
+    "question": "How many doses did Moderna produce?",
+    "answer": "UNANSWERABLE",
+    "acceptable_answers": [],
+    "doc_id": null,
+    "page": null,
+    "category": "unanswerable",
+    "probe_category": "entity-swap",
+    "check_absent": [
+      "moderna"
+    ],
+    "why": "Moderna never appears"
+  },
+  {
+    "qid": "frozen3-unans-33",
+    "question": "How many employees does Boeing have?",
+    "answer": "UNANSWERABLE",
+    "acceptable_answers": [],
+    "doc_id": null,
+    "page": null,
+    "category": "unanswerable",
+    "probe_category": "entity-swap",
+    "check_absent": [
+      "boeing"
+    ],
+    "why": "Boeing never appears"
+  },
+  {
+    "qid": "frozen3-unans-34",
+    "question": "How many employees does Microsoft have worldwide?",
+    "answer": "UNANSWERABLE",
+    "acceptable_answers": [],
+    "doc_id": null,
+    "page": null,
+    "category": "unanswerable",
+    "probe_category": "entity-swap",
+    "check_absent": [
+      "microsoft"
+    ],
+    "why": "Microsoft never appears"
+  },
+  {
+    "qid": "frozen3-unans-35",
+    "question": "How many mainframes did IBM sell?",
+    "answer": "UNANSWERABLE",
+    "acceptable_answers": [],
+    "doc_id": null,
+    "page": null,
+    "category": "unanswerable",
+    "probe_category": "entity-swap",
+    "check_absent": [
+      "ibm"
+    ],
+    "why": "IBM never appears"
+  },
+  {
+    "qid": "frozen3-unans-36",
+    "question": "How many offices does Airbnb have in Europe?",
+    "answer": "UNANSWERABLE",
+    "acceptable_answers": [],
+    "doc_id": null,
+    "page": null,
+    "category": "unanswerable",
+    "probe_category": "entity-swap",
+    "check_absent": [
+      "airbnb"
+    ],
+    "why": "Airbnb never appears"
+  },
+  {
+    "qid": "frozen3-unans-37",
+    "question": "How many searches does Baidu process?",
+    "answer": "UNANSWERABLE",
+    "acceptable_answers": [],
+    "doc_id": null,
+    "page": null,
+    "category": "unanswerable",
+    "probe_category": "entity-swap",
+    "check_absent": [
+      "baidu"
+    ],
+    "why": "Baidu never appears"
+  },
+  {
+    "qid": "frozen3-unans-38",
+    "question": "How many stores does IKEA operate?",
+    "answer": "UNANSWERABLE",
+    "acceptable_answers": [],
+    "doc_id": null,
+    "page": null,
+    "category": "unanswerable",
+    "probe_category": "entity-swap",
+    "check_absent": [
+      "ikea"
+    ],
+    "why": "IKEA never appears"
+  },
+  {
+    "qid": "frozen3-unans-39",
+    "question": "How many stores does Starbucks operate?",
+    "answer": "UNANSWERABLE",
+    "acceptable_answers": [],
+    "doc_id": null,
+    "page": null,
+    "category": "unanswerable",
+    "probe_category": "entity-swap",
+    "check_absent": [
+      "starbucks"
+    ],
+    "why": "Starbucks never appears"
+  },
+  {
+    "qid": "frozen3-unans-40",
+    "question": "How many subscribers does Spotify have in Asia?",
+    "answer": "UNANSWERABLE",
+    "acceptable_answers": [],
+    "doc_id": null,
+    "page": null,
+    "category": "unanswerable",
+    "probe_category": "entity-swap",
+    "check_absent": [
+      "spotify"
+    ],
+    "why": "Spotify never appears"
+  },
+  {
+    "qid": "frozen3-unans-41",
+    "question": "How many users does TikTok have in the US?",
+    "answer": "UNANSWERABLE",
+    "acceptable_answers": [],
+    "doc_id": null,
+    "page": null,
+    "category": "unanswerable",
+    "probe_category": "entity-swap",
+    "check_absent": [
+      "tiktok"
+    ],
+    "why": "TikTok never appears"
+  },
+  {
+    "qid": "frozen3-unans-42",
+    "question": "How many users does WeChat have in Europe?",
+    "answer": "UNANSWERABLE",
+    "acceptable_answers": [],
+    "doc_id": null,
+    "page": null,
+    "category": "unanswerable",
+    "probe_category": "entity-swap",
+    "check_absent": [
+      "wechat"
+    ],
+    "why": "WeChat never appears"
+  },
+  {
+    "qid": "frozen3-unans-43",
+    "question": "What did Amazon report for its cloud business?",
+    "answer": "UNANSWERABLE",
+    "acceptable_answers": [],
+    "doc_id": null,
+    "page": null,
+    "category": "unanswerable",
+    "probe_category": "entity-swap",
+    "check_absent": [
+      "amazon"
+    ],
+    "why": "Amazon never appears"
+  },
+  {
+    "qid": "frozen3-unans-44",
+    "question": "What did Exxon report for upstream earnings?",
+    "answer": "UNANSWERABLE",
+    "acceptable_answers": [],
+    "doc_id": null,
+    "page": null,
+    "category": "unanswerable",
+    "probe_category": "entity-swap",
+    "check_absent": [
+      "exxon"
+    ],
+    "why": "Exxon never appears"
+  },
+  {
+    "qid": "frozen3-unans-45",
+    "question": "What did Siemens say about its industrial business?",
+    "answer": "UNANSWERABLE",
+    "acceptable_answers": [],
+    "doc_id": null,
+    "page": null,
+    "category": "unanswerable",
+    "probe_category": "entity-swap",
+    "check_absent": [
+      "siemens"
+    ],
+    "why": "Siemens never appears"
+  },
+  {
+    "qid": "frozen3-unans-46",
+    "question": "What did the report say about the Tesla Gigafactory?",
+    "answer": "UNANSWERABLE",
+    "acceptable_answers": [],
+    "doc_id": null,
+    "page": null,
+    "category": "unanswerable",
+    "probe_category": "entity-swap",
+    "check_absent": [
+      "tesla"
+    ],
+    "why": "Tesla never appears"
+  },
+  {
+    "qid": "frozen3-unans-47",
+    "question": "What is the estimated cost of the Qatar 2022 World Cup?",
+    "answer": "UNANSWERABLE",
+    "acceptable_answers": [],
+    "doc_id": null,
+    "page": null,
+    "category": "unanswerable",
+    "probe_category": "entity-swap",
+    "check_absent": [
+      "qatar"
+    ],
+    "why": "Qatar never appears"
+  },
+  {
+    "qid": "frozen3-unans-48",
+    "question": "What is the market cap of Coca-Cola according to this deck?",
+    "answer": "UNANSWERABLE",
+    "acceptable_answers": [],
+    "doc_id": null,
+    "page": null,
+    "category": "unanswerable",
+    "probe_category": "entity-swap",
+    "check_absent": [
+      "coca-cola",
+      "coca cola"
+    ],
+    "why": "Coca-Cola never appears"
+  },
+  {
+    "qid": "frozen3-unans-49",
+    "question": "What is the market share of Huawei in Germany?",
+    "answer": "UNANSWERABLE",
+    "acceptable_answers": [],
+    "doc_id": null,
+    "page": null,
+    "category": "unanswerable",
+    "probe_category": "entity-swap",
+    "check_absent": [
+      "huawei"
+    ],
+    "why": "Huawei never appears"
+  },
+  {
+    "qid": "frozen3-unans-50",
+    "question": "How did COVID-19 change the business?",
+    "answer": "UNANSWERABLE",
+    "acceptable_answers": [],
+    "doc_id": null,
+    "page": null,
+    "category": "unanswerable",
+    "probe_category": "false-bridge",
+    "check_absent": [
+      "covid-19"
+    ],
+    "why": "event absent"
+  },
+  {
+    "qid": "frozen3-unans-51",
+    "question": "How did machine learning change the forecast?",
+    "answer": "UNANSWERABLE",
+    "acceptable_answers": [],
+    "doc_id": null,
+    "page": null,
+    "category": "unanswerable",
+    "probe_category": "false-bridge",
+    "check_absent": [
+      "machine learning"
+    ],
+    "why": "topic absent"
+  },
+  {
+    "qid": "frozen3-unans-52",
+    "question": "How did the Cold War affect the market?",
+    "answer": "UNANSWERABLE",
+    "acceptable_answers": [],
+    "doc_id": null,
+    "page": null,
+    "category": "unanswerable",
+    "probe_category": "false-bridge",
+    "check_absent": [
+      "cold war"
+    ],
+    "why": "event absent"
+  },
+  {
+    "qid": "frozen3-unans-53",
+    "question": "How did the Industrial Revolution change the industry?",
+    "answer": "UNANSWERABLE",
+    "acceptable_answers": [],
+    "doc_id": null,
+    "page": null,
+    "category": "unanswerable",
+    "probe_category": "false-bridge",
+    "check_absent": [
+      "industrial revolution"
+    ],
+    "why": "event absent"
+  },
+  {
+    "qid": "frozen3-unans-54",
+    "question": "How did the company use blockchain?",
+    "answer": "UNANSWERABLE",
+    "acceptable_answers": [],
+    "doc_id": null,
+    "page": null,
+    "category": "unanswerable",
+    "probe_category": "false-bridge",
+    "check_absent": [
+      "blockchain"
+    ],
+    "why": "topic absent"
+  },
+  {
+    "qid": "frozen3-unans-55",
+    "question": "How many medals were won at the 2024 Olympics?",
+    "answer": "UNANSWERABLE",
+    "acceptable_answers": [],
+    "doc_id": null,
+    "page": null,
+    "category": "unanswerable",
+    "probe_category": "false-bridge",
+    "check_absent": [
+      "2024 olympics"
+    ],
+    "why": "event absent"
+  },
+  {
+    "qid": "frozen3-unans-56",
+    "question": "How many rockets did SpaceX launch?",
+    "answer": "UNANSWERABLE",
+    "acceptable_answers": [],
+    "doc_id": null,
+    "page": null,
+    "category": "unanswerable",
+    "probe_category": "false-bridge",
+    "check_absent": [
+      "spacex"
+    ],
+    "why": "entity absent"
+  },
+  {
+    "qid": "frozen3-unans-57",
+    "question": "What did the CEO say about the metaverse?",
+    "answer": "UNANSWERABLE",
+    "acceptable_answers": [],
+    "doc_id": null,
+    "page": null,
+    "category": "unanswerable",
+    "probe_category": "false-bridge",
+    "check_absent": [
+      "metaverse"
+    ],
+    "why": "topic absent"
+  },
+  {
+    "qid": "frozen3-unans-58",
+    "question": "What did the CEO say after the merger with Uber?",
+    "answer": "UNANSWERABLE",
+    "acceptable_answers": [],
+    "doc_id": null,
+    "page": null,
+    "category": "unanswerable",
+    "probe_category": "false-bridge",
+    "check_absent": [
+      "uber"
+    ],
+    "why": "event/entity absent"
+  },
+  {
+    "qid": "frozen3-unans-59",
+    "question": "What did the company say about ChatGPT?",
+    "answer": "UNANSWERABLE",
+    "acceptable_answers": [],
+    "doc_id": null,
+    "page": null,
+    "category": "unanswerable",
+    "probe_category": "false-bridge",
+    "check_absent": [
+      "chatgpt"
+    ],
+    "why": "event/entity absent"
+  }
+]

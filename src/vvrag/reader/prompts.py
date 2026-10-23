@@ -163,8 +163,9 @@ def build_visual_check_prompt(question: str, claimed_answer: str) -> str:
 
 
 EXAMINER_SYSTEM = """You are a strict, independent examiner. You are shown the evidence image(s)
-for one document page (a zoomed region and/or the page itself). Another model was asked the
-question below and produced a claim. Your job is to find problems with the claim, not to be polite.
+for one document page: typically the full page first and a highlighted/zoomed cited region second.
+Another model was asked the question below and produced a claim. Your job is to find problems with
+the claim and with the citation, not to be polite.
 
 Rules:
 - Work only from the image(s) shown. NEVER use outside knowledge.
@@ -178,9 +179,14 @@ Rules:
   "no" (not visible or wrong for this page).
 - "answers_the_question": true only if the claim actually answers the question as asked
   (right kind of thing, right entity, right year/unit/scope when the question specifies one).
+- "citation_specific": true only if the highlighted/zoomed region itself contains the specific
+  evidence for the claim. A true claim somewhere else on the page does NOT make the citation
+  specific. If no highlighted region is supplied, judge the cited page/region shown.
+- "region_supports": true only if the highlighted/zoomed region supports the claim. A page
+  number or unrelated label must be false even when the claim is true elsewhere.
 - "problem": one short sentence naming the biggest problem, or "" when there is none.
 Return STRICT JSON only:
-{"quote_found": true, "quote_seen": "<verbatim words from the image>", "answer_supported": "yes", "answers_the_question": true, "problem": ""}"""
+{"quote_found": true, "quote_seen": "<verbatim words from the image>", "answer_supported": "yes", "answers_the_question": true, "citation_specific": true, "region_supports": true, "problem": ""}"""
 
 
 def build_examiner_prompt(
@@ -188,9 +194,17 @@ def build_examiner_prompt(
     claimed_answer: str,
     claimed_quote: str = "",
     found_in: str = "",
+    claims: list[str] | None = None,
+    claim_evidence: list[str] | None = None,
+    n_claim_images: int = 0,
 ) -> str:
     """Run 9 (guideline s4.3): the examiner is SHOWN the claim (not just asked
-    to answer), then asked to find the quote itself and judge fit."""
+    to answer), then asked to find the quote itself and judge fit.
+
+    With `claims`, the same call also returns a claim-level verdict for each
+    atomic claim. Image 1 is the full page; image 2 is the lead claim's
+    candidate region; images 3.. are the other claims' candidate regions.
+    """
     parts = [
         EXAMINER_SYSTEM,
         f"Question: {question}",
@@ -200,6 +214,133 @@ def build_examiner_prompt(
         parts.append(f"The other model's quote: {claimed_quote!r}")
     if found_in:
         parts.append(f"The other model says it is located at: {found_in}")
+    if claims:
+        claim_texts = list(claims)
+        evidence = list(claim_evidence or [])
+        lines = ["Claim-level verification:"]
+        if n_claim_images:
+            lines.append(
+                "Image 1 is the full page. Images 2..%d are the highlighted "
+                "candidate regions for claims 0..%d. Claims after that are "
+                "judged from the full page and their candidate-region text."
+                % (n_claim_images + 1, n_claim_images - 1))
+        else:
+            lines.append(
+                "Only the full-page image is supplied; judge each claim from "
+                "the page and its candidate-region text.")
+        lines.extend([
+            "Judge EACH claim against its own candidate region (and the page "
+            "for context). The top-level fields above judge the reader's full "
+            "answer; the claims array must use these labels:",
+            "  supported | partially_supported | insufficient | unsupported",
+            "A true statement elsewhere on the page does not make a claim's "
+            "citation specific. A page number or unrelated label is false.",
+        ])
+        for i, text in enumerate(claim_texts):
+            ev = evidence[i] if i < len(evidence) else ""
+            lines.append(
+                f"[{i}] claim: {text!r}\n"
+                f"    candidate region text: {ev!r}")
+        lines.append(
+            "Return the top-level JSON fields AND a claims array, STRICT JSON:")
+        lines.append(
+            '{"...": "...", "claims": [{"index": 0, "label": "supported", '
+            '"citation_specific": true, "region_supports": true, '
+            '"quote_found": true, "quote_seen": "<verbatim words>", '
+            '"problem": ""}]}')
+        parts.append("\n".join(lines))
+    parts.append("JSON:")
+    return "\n\n".join(parts)
+
+
+TEXT_EXAMINER_SYSTEM = """You are a strict, independent examiner working from OCR text only.
+You are NOT shown an image: you see the cited text and the retrieved page OCR for one question.
+Another model was asked the question and produced a claim. Find problems with the claim and with
+its citation; do not be polite and do not assume the other model is right.
+
+Rules:
+- Work only from the text shown. NEVER use outside knowledge.
+- "quote_seen": copy the exact words from the CITED TEXT that carry the answer. If the answer
+  is not in the cited text, use an exact phrase from the page OCR and set citation_specific false.
+- "quote_found": true only when the answer is really present in the supplied text.
+- "answer_supported": "yes" (present and correct), "partly" (partly present or ambiguous),
+  "no" (absent or wrong for this page).
+- "answers_the_question": true only if the claim answers the question as asked (right kind of
+  thing, entity, year/unit/scope when specified).
+- "citation_specific": true only if the CITED TEXT itself contains the specific evidence.
+  A true fact elsewhere on the page does NOT make the citation specific.
+- "region_supports": same judgement for text-only mode: true only when the cited text supports it.
+- "problem": one short sentence naming the biggest problem, or "" when there is none.
+Return STRICT JSON only:
+{"quote_found": true, "quote_seen": "<verbatim words>", "answer_supported": "yes",
+ "answers_the_question": true, "citation_specific": true, "region_supports": true, "problem": ""}"""
+
+
+def build_text_examiner_prompt(
+    question: str,
+    claimed_answer: str,
+    claimed_quote: str = "",
+    found_in: str = "",
+    cited_texts: list[str] | None = None,
+    page_texts: list[str] | None = None,
+    claims: list[str] | None = None,
+    claim_evidence: list[str] | None = None,
+    max_chars: int = 6000,
+) -> str:
+    """Text-only independent examiner prompt (no image tokens).
+
+    Used when the configured examiner is a text model or a vision-model quota
+    is unavailable. The deterministic citation precheck still runs before the
+    answer is shown, and a text-only confirmation never opens the visual tier.
+    """
+    def _clip(texts):
+        out, used = [], 0
+        for t in texts or []:
+            t = " ".join(str(t or "").split())
+            if not t:
+                continue
+            room = max_chars - used
+            if room <= 0:
+                break
+            out.append(t[:room])
+            used += len(out[-1]) + 2
+        return out
+
+    parts = [TEXT_EXAMINER_SYSTEM, f"Question: {question}",
+             f"Claimed answer: {claimed_answer}"]
+    if claimed_quote:
+        parts.append(f"The other model's quote: {claimed_quote!r}")
+    if found_in:
+        parts.append(f"The other model says it is located at: {found_in}")
+    cited = _clip(cited_texts)
+    pages = _clip(page_texts)
+    parts.append("CITED TEXT (the evidence the reader selected):\n" +
+                 ("\n".join(f"- {t}" for t in cited) if cited
+                  else "(none supplied)"))
+    parts.append("RETRIEVED PAGE OCR (context only; not necessarily cited):\n" +
+                 ("\n".join(f"- {t}" for t in pages) if pages
+                  else "(none supplied)"))
+    if claims:
+        lines = ["Claim-level verification (judge each claim against the cited "
+                 "text and its candidate-region text):"]
+        lines.extend([
+            "Labels: supported | partially_supported | insufficient | unsupported",
+            "A true statement elsewhere on the page does not make a claim's "
+            "citation specific.",
+        ])
+        evidence = list(claim_evidence or [])
+        for i, text in enumerate(claims):
+            ev = evidence[i] if i < len(evidence) else ""
+            lines.append(f"[{i}] claim: {text!r}\n"
+                         f"    candidate region text: {ev!r}")
+        lines.append(
+            "Return the top-level JSON fields AND a claims array, STRICT JSON:")
+        lines.append(
+            '{"...": "...", "claims": [{"index": 0, "label": "supported", '
+            '"citation_specific": true, "region_supports": true, '
+            '"quote_found": true, "quote_seen": "<verbatim words>", '
+            '"problem": ""}]}')
+        parts.append("\n".join(lines))
     parts.append("JSON:")
     return "\n\n".join(parts)
 

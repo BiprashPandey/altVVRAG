@@ -41,6 +41,9 @@ CREATE TABLE IF NOT EXISTS sentences(
   source TEXT DEFAULT 'textlayer',
   PRIMARY KEY (doc_id, page, sent_id));
 CREATE INDEX IF NOT EXISTS idx_sent_docpage ON sentences(doc_id, page);
+CREATE TABLE IF NOT EXISTS index_manifest(
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL);
 """
 
 
@@ -117,6 +120,60 @@ def count_sentences(con: sqlite3.Connection) -> int:
 
 def indexed_pages(con: sqlite3.Connection) -> set[tuple[str, int]]:
     return {(r[0], r[1]) for r in con.execute("SELECT doc_id, page FROM pages")}
+
+
+# ------------------------------------------------------------- manifest ---
+
+SCHEMA_VERSION = 2
+
+
+def set_manifest(con: sqlite3.Connection, values: dict) -> None:
+    """Persist index provenance (schema/embedding/grid/dpi) in SQLite.
+
+    The manifest is deliberately stored alongside word boxes so a copied
+    meta.db cannot be mistaken for the vector collection it was built with.
+    """
+    import json
+
+    rows = [(str(k), json.dumps(v, sort_keys=True))
+            for k, v in values.items() if v is not None]
+    con.executemany(
+        "INSERT OR REPLACE INTO index_manifest(key, value) VALUES (?, ?)", rows)
+    con.commit()
+
+
+def get_manifest(con: sqlite3.Connection) -> dict:
+    """Read the manifest. Values are JSON-decoded; legacy empty -> {}."""
+    import json
+
+    out: dict = {}
+    for k, v in con.execute("SELECT key, value FROM index_manifest"):
+        try:
+            out[str(k)] = json.loads(v)
+        except (TypeError, ValueError):
+            out[str(k)] = v
+    return out
+
+
+def manifest_mismatches(con: sqlite3.Connection, expected: dict) -> list[str]:
+    """Return human-readable provenance mismatches, ignoring absent legacy keys.
+
+    Missing keys are reported only when the caller explicitly requires them
+    (expected value is not None). This lets old indexes load in degraded mode
+    while new indexes fail closed when a model/dimension is wrong.
+    """
+    got = get_manifest(con)
+    problems: list[str] = []
+    for key, want in expected.items():
+        if want is None:
+            continue
+        if key not in got:
+            problems.append(f"manifest missing {key} (expected {want!r})")
+            continue
+        if str(got[key]) != str(want):
+            problems.append(
+                f"manifest {key}={got[key]!r} != expected {want!r}")
+    return problems
 
 
 # ---------------------------------------------------------------- Qdrant ---

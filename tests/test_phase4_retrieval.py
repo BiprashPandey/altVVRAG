@@ -4,6 +4,12 @@ All pure CPU, no network, no model.
 """
 from __future__ import annotations
 
+import numpy as np
+import pymupdf
+import pytest
+
+from vvrag.ingest.index import connect_sqlite
+from vvrag.ingest.run_ingest import run_ingest
 from vvrag.retrieve.bridge import (missing_tokens, question_tokens,
                                    resolve_bridge)
 from vvrag.retrieve.rerank import lexical_rerank
@@ -116,3 +122,46 @@ def test_visual_scoring_failure_falls_back(monkeypatch, tmp_path):
     rd = res.get("retrieval_debug") or {}
     assert rd.get("mode_used") == "keyword"
     assert "visual scoring failed" in (rd.get("note") or "")
+
+
+def test_visual_scope_all_can_promote_page_keyword_missed(monkeypatch, tmp_path):
+    """Report parity: a page keyword ranked second can win the visual order."""
+    from vvrag.ui import qa
+    from vvrag.retrieve import query_vectors as qv
+    from vvrag.retrieve import fusion
+
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    with pymupdf.open() as doc:
+        p0 = doc.new_page()
+        p0.insert_text((50, 50), "Alpha appendix material")
+        p1 = doc.new_page()
+        p1.insert_text((50, 50), "Beta target page")
+        doc.save(raw / "deck.pdf")
+    index = tmp_path / "index"
+    run_ingest(raw, index, dpi=100, embedder="fake", skip_ocr=True,
+               qdrant_path=str(index / "qdrant"))
+    con = connect_sqlite(index / "meta.db")
+    page0_key = ("deck", 0)
+    page1_key = ("deck", 1)
+    assert page0_key != page1_key
+
+    class _Store:
+        def __init__(self, *a, **k):
+            pass
+
+        def get(self, text):
+            return np.ones((1, 4), dtype="float32"), ["q"]
+
+    monkeypatch.setattr(qv, "QueryVectorStore", _Store)
+    monkeypatch.setattr(qa, "_check_online_encoder", lambda cfg: None)
+    monkeypatch.setattr(
+        fusion, "visual_page_scores",
+        lambda index_dir, pages, qvecs: {page0_key: 0.1, page1_key: 0.9})
+
+    res = qa.answer_question("Beta target", str(index), str(tmp_path / "w"),
+                             reader_mode="mock", retrieval_mode="visual",
+                             n_samples=1)
+    rd = res.get("retrieval_debug") or {}
+    assert rd["mode_used"] == "visual"
+    assert rd["pages_context"][0] == {"doc_id": "deck", "page": 1}

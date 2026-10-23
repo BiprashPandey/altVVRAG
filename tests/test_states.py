@@ -80,14 +80,15 @@ def test_state_tables(monkeypatch, tmp_path):
     assert r2["state_reason"]
     assert r2["evidence"]["boxes"]  # source still shown
 
-    # ---- not_confident: asked-for year missing from the evidence ----------
+    # ---- nothing_found: asked-for year absent from the whole document set --
     _patch(monkeypatch, lambda: ReaderSample(
         sample_id=0, answer="42 million", quote="Aurora revenue was 42 million",
         sentence_ids=[target.sent_id], claims=[]))
     r3 = answer_question("What was the Aurora revenue in 2021?", str(index),
                          str(tmp_path / "w3"), reader_mode="mock", n_samples=1,
                          grounding="span", gate="none", doc_id=doc_id)
-    assert r3["state"] == "not_confident"
+    assert r3["state"] == "nothing_found" and r3["abstained"] is True
+    assert r3["details"]["impossible_years"] == ["2021"]
     assert any("2021" in w for w in r3["details"]["warnings"]), r3["details"]
     assert "2021" in r3["state_reason"]
 
@@ -102,3 +103,23 @@ def test_state_tables(monkeypatch, tmp_path):
     assert r4["state_label"] == "Nothing found"
     assert r4["nothing_found_text"]
     assert r4["closest_passages"] == [] or isinstance(r4["closest_passages"], list)
+
+
+def test_text_only_examiner_mode(monkeypatch, tmp_path):
+    """Text examiner mode must skip image evidence but keep the contract."""
+    index, doc_id, sents = _setup(tmp_path, None)
+    target = next(s for s in sents if "42 million" in s.text)
+    cfg = tmp_path / "cfg.yaml"
+    cfg.write_text("verify:\n  examiner_evidence: text\n", encoding="utf-8")
+    monkeypatch.setenv("VVRAG_CONFIG", str(cfg))
+    _patch(monkeypatch, lambda: ReaderSample(
+        sample_id=0, answer="42 million",
+        quote="Aurora revenue was 42 million in 2011",
+        sentence_ids=[target.sent_id, target.sent_id + 1],
+        claims=[], found_in="body text", confidence=0.9))
+    r = answer_question("What was the Aurora revenue in 2011?", str(index),
+                        str(tmp_path / "text"), reader_mode="mock",
+                        n_samples=1, grounding="span", gate="none",
+                        doc_id=doc_id)
+    assert r["examiner"]["evidence_mode"] == "text"
+    assert r["state"] == "verified", r["state_reason"]

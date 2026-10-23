@@ -34,6 +34,9 @@ class RetrieverConfig:
     rerank: bool = True
     rerank_top_k: int = 5
     bridge_resolution: bool = True
+    # Phase B (report parity): score every page in the index visually, not
+    # only pages keyword retrieval happened to surface.
+    visual_scope: str = "all"  # all | keyword
 
 
 @dataclass
@@ -86,10 +89,24 @@ class VerifyConfig:
     mode: str = "examiner_shown"
     examiner_provider: str = "groq"
     examiner_models: list = field(default_factory=lambda: [
-        "qwen/qwen3.8-27b",
-        "meta-llama/llama-4-maverick-17b-128e-instruct",
-        "meta-llama/llama-4-scout-17b-16e-instruct",
+        "qwen/qwen3.8-27b",  # only model confirmed available on this account
     ])
+    # region = send only the reader-declared/answer crop; page = full page;
+    # page_and_region = full page plus the highlighted/zoomed region (default;
+    # the verifier must judge the citation, not just the page); text = OCR
+    # only, no image tokens (independent text examiner / quota fallback).
+    examiner_evidence: str = "page_and_region"
+    # Report-gap fix: VERIFIED requires the verifier to say the highlighted
+    # region itself is the specific evidence, not merely that the page is true.
+    require_citation_specific: bool = True
+    citation_min_terms: int = 1
+    # Claim-level verification: one examiner call also returns per-claim
+    # labels. The first `claim_level_max` claims get their own candidate crop;
+    # extra claims remain insufficient unless the sample-level verdict is
+    # explicit. Set `claim_level: false` to reproduce the old sample-only run.
+    claim_level: bool = True
+    claim_level_max: int = 5
+    claim_level_images: int = 2
     examiner_max_tokens: int = 700
     examiner_temperature: float = 0.0
     examiner_quote_threshold: float = 0.6
@@ -215,9 +232,11 @@ def _load_dotenv(dotenv_path: str | Path = ".env") -> None:
         os.environ.setdefault(k.strip(), v.strip())
 
 
-def load_config(config_path: str | Path = "config.yaml", dotenv_path: str | Path = ".env") -> AppConfig:
+def load_config(config_path: str | Path = "", dotenv_path: str | Path = ".env") -> AppConfig:
     _load_dotenv(dotenv_path)
     data: dict = {}
+    if not config_path:
+        config_path = os.environ.get("VVRAG_CONFIG", "config.yaml")
     p = Path(config_path)
     if p.exists():
         with p.open() as f:

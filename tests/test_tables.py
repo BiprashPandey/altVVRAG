@@ -1,7 +1,8 @@
 """Run 9 Phase 4: table-aware citation units."""
 from __future__ import annotations
 
-from vvrag.ingest.tables import build_sentences_with_tables, table_units
+from vvrag.ingest.tables import (build_sentences_with_tables,
+                                  number_unit_units, table_units)
 from vvrag.schemas import WordBox
 
 
@@ -81,3 +82,36 @@ def test_build_sentences_with_tables_ids_follow_text():
     got = build_sentences_with_tables([*words], 600)
     assert [u.source for u in got[-len(combined) + 1:]] == \
         [u.source for u in combined[1:]]
+
+
+def test_number_unit_units_for_split_ocr_rows():
+    words = [
+        WordBox("doc", 0, "83.6", (100, 315, 170, 344), block_id=20,
+                line_id=1),
+        WordBox("doc", 0, "bn", (180, 315, 218, 344), block_id=20,
+                line_id=1),
+        WordBox("doc", 0, "12.5", (100, 563, 170, 592), block_id=20,
+                line_id=1),
+        WordBox("doc", 0, "bn", (180, 563, 218, 592), block_id=20,
+                line_id=1),
+        WordBox("doc", 0, "9.5bn", (100, 744, 196, 773), block_id=20,
+                line_id=2),
+        WordBox("doc", 0, "15.0%", (100, 656, 196, 683), block_id=20,
+                line_id=1),
+    ]
+    units = number_unit_units(words, page_width=1000, first_id=7)
+    texts = [u.text for u in units]
+    assert "83.6 bn" in texts and "12.5 bn" in texts
+    assert "9.5bn" in texts and "15.0%" in texts
+    assert all(u.source == "table" for u in units)
+    assert [u.sent_id for u in units] == list(range(7, 7 + len(units)))
+
+
+def test_number_unit_units_do_not_pair_across_lines():
+    words = [
+        WordBox("doc", 0, "12.5", (100, 100, 170, 130), block_id=0,
+                line_id=0),
+        WordBox("doc", 0, "bn", (180, 200, 218, 230), block_id=0,
+                line_id=1),
+    ]
+    assert number_unit_units(words, page_width=1000) == []

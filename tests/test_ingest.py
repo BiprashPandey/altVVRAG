@@ -57,10 +57,23 @@ def test_ingest_three_pdfs_end_to_end(tmp_path):
     # pooled: 6 pages x (8 rows + 6 cols + 1 global) = 90
     assert m1["qdrant_pooled"] == 6 * (8 + 6 + 1), m1
     assert m1["word_boxes"] > 0
+    assert m1["schema_version"] == index_mod.SCHEMA_VERSION
+    assert m1["embedding_model"] == "fake"
+    assert m1["embedding_dim"] == 32
+    con = index_mod.connect_sqlite(out / "meta.db")
+    man = index_mod.get_manifest(con)
+    assert man["pages"] == 6 and man["embedding_dim"] == 32
+    assert index_mod.manifest_mismatches(con, {"embedding_model": "fake"}) == []
+    mismatches = index_mod.manifest_mismatches(
+        con, {"embedding_model": "other-model"})
+    assert mismatches and "other-model" in mismatches[0]
 
     # Re-run: everything skipped (resumable/idempotent).
     m2 = run_ingest(raw, out, dpi=100, embedder="fake", skip_ocr=True,
                     qdrant_path=str(out / "qdrant"))
     assert m2["stats"]["pages"] == 0 and m2["stats"]["skipped"] == 6, m2
+    assert m2["embedding_dim"] == 32, m2
+    assert m2["qdrant_full"] == 6, m2
     con = index_mod.connect_sqlite(out / "meta.db")
     assert index_mod.count_pages(con) == 6
+    assert index_mod.get_manifest(con)["embedding_dim"] == 32

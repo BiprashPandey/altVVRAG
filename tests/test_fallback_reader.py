@@ -100,3 +100,11 @@ def test_rotating_key_reader_rotates_on_permission_denied():
     rk = RotatingKeyReader("m", ["kd", "kg"], reader_cls=_Denied)
     assert rk.generate([], "p", 0.0, 1) == ["ok:kg"]
     assert rk.key_rotations == 1
+
+
+def test_provider_key_discovery_includes_numbered_groq_keys():
+    from vvrag.reader.client import _groq_keys
+
+    env = {"GROQ_API_KEY": "gsk_a", "GROQ_API_KEY2": "grok_b",
+           "GROQ_API_KEY_3": "gsk_a", "OTHER": "x"}
+    assert _groq_keys(env.get) == ["gsk_a"]

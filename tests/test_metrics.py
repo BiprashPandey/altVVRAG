@@ -142,27 +142,62 @@ def test_verified_stats_run9():
 
     rows = [
         {"state": "verified", "equiv_correct": True,
-         "pred_boxes": [(0, 0, 1, 1)], "examiner": {"confirmed": True}},
+         "pred_boxes": [(0, 0, 1, 1)],
+         "examiner": {"confirmed": True, "citation_specific": True},
+         "citation_check": {"ok": True},
+         "claims": [{"text": "a", "label": "supported",
+                     "citation_specific": True},
+                    {"text": "b", "label": "partially_supported",
+                     "citation_specific": False}],
+         "details": {"ok": False}},
         {"state": "verified", "equiv_correct": False,
-         "examiner": {"confirmed": True}},
+         "examiner": {"confirmed": True, "citation_specific": False},
+         "citation_check": {"ok": False, "numeric_sink": True}},
         {"state": "not_confident", "equiv_correct": False,
          "abstained": False, "pred_sentence_ids": [3]},
         {"state": "nothing_found", "equiv_correct": False, "abstained": True},
+        {"state": "not_confident", "equiv_correct": True, "abstained": False,
+         "visual_verified": True,
+         "citation_check": {"ok": True},
+         "citations": {"derived_from_quote": True}},
         {"state": "nothing_found", "unanswerable": True, "equiv_correct": True},
         {"state": "verified", "unanswerable": True, "equiv_correct": False},
         {"error": "boom"},
     ]
     st = verified_stats(rows)
-    assert st["n_gold"] == 4 and st["n_probes"] == 2
+    assert st["n_gold"] == 5 and st["n_probes"] == 2
     assert st["n_verified"] == 2
     assert st["verified_precision"] == 0.5          # 1 correct of 2 verified
     assert st["flag_recall"] == 2 / 3               # 2 of 3 wrong flagged
     assert st["unflagged_wrong_rate"] == 1 / 3
-    assert st["answer_coverage"] == 0.75
-    assert st["source_accuracy"] == 2 / 3           # boxes + sentence refs
+    assert st["answer_coverage"] == 0.8
+    assert st["source_accuracy"] == 0.5             # boxes + sentence refs
     assert st["examiner_leniency"] == 0.5           # 1 of 2 confirmed is wrong
     assert st["probe_flag_rate"] == 0.5
+    assert st["probe_nothing_found_rate"] == 0.5
+    assert st["probe_answered_rate"] == 0.5         # verified probe is shown
     assert st["false_verified_on_probes"] == 0.5
+    assert st["examiner_availability"] == 0.4       # 2 of 5 gold rows
+    assert st["verified_yield"] == 0.4              # 2 of 5 gold rows
+    assert st["n_visual_verified"] == 1
+    assert st["visual_verified_yield"] == 0.2
+    assert st["visual_verified_precision"] == 1.0
+    assert st["false_visual_verified_on_probes"] == 0.0
+    assert st["n_derived_citations"] == 1
+    assert st["derived_citation_rate"] == 0.2
+    assert st["derived_citation_precision"] == 1.0
+    assert st["details_block_rate_on_correct"] == 0.5
+    assert st["n_citation_checked"] == 3
+    assert st["citation_reject_rate"] == 1 / 3
+    assert st["n_numeric_sink_rejected"] == 1
+    assert st["examiner_citation_specific_rate"] == 0.5
+    assert st["n_claims"] == 2
+    assert st["n_claims_supported"] == 1
+    assert st["claim_support_rate"] == 0.5
+    assert st["claim_partial_rate"] == 0.5
+    assert st["claim_failure_rate"] == 0.0
+    assert st["claim_verification_rate"] == 1.0
+    assert st["claim_citation_specific_rate"] == 0.5
     empty = verified_stats([])
     assert empty["verified_precision"] is None and empty["n_gold"] == 0
 
@@ -205,3 +240,12 @@ def test_verified_stats_examiner_only_subset():
     assert all_st["n_gold_examinable"] == 5
     assert all_st["n_examiner_unavailable"] == 0
     assert all_st["answer_coverage"] == 0.8  # 4 of 5 gold rows are shown
+
+
+def test_partial_answer_credit_is_report_only():
+    from vvrag.eval.metrics import partial_answer_correct
+    assert partial_answer_correct(
+        "National Monitoring Committee",
+        ["National Monitoring Committee, Oversight at Central Level for all projects"])
+    assert not partial_answer_correct("11", ["12"])
+    assert not partial_answer_correct("business", ["business model"])

@@ -34,6 +34,19 @@ def test_quote_seen_match_prefers_ocr_containment():
     assert quote_seen_match("", "12.5 bn", texts) == 0.0
 
 
+def test_quote_seen_match_short_quote_and_page_ocr():
+    # The examiner may quote the answer plus surrounding row text.
+    assert quote_seen_match("Trading Operating Profit 12.5 bn", "12.5 bn") == 1.0
+    # A table answer with no cited sentence can still be checked on page OCR.
+    assert quote_seen_match("12.5 bn", "", page_texts=[
+        "Trading Operating Profit 12.5 bn 7.5 bn"]) == 1.0
+    assert quote_seen_match("15%", "", page_texts=["15 percent growth"]) == 1.0
+    ok, match, reason = examiner_confirmed(
+        _v(quote_seen="Trading Operating Profit 12.5 bn"), "12.5 bn", [],
+        page_texts=["Trading Operating Profit 12.5 bn"])
+    assert ok and match == 1.0 and reason == ""
+
+
 def test_examiner_confirmed_rules():
     ok, match, reason = examiner_confirmed(_v(), "12.5 bn",
                                            ["Revenue 12.5 bn in 2011."])
@@ -54,6 +67,27 @@ def test_examiner_confirmed_rules():
     ok, _m, reason = examiner_confirmed(
         {"ok": False, "parse_error": "bad"}, "q", [])
     assert not ok and "usable verdict" in reason
+
+
+def test_examiner_requires_citation_specific_when_configured():
+    texts = ["Total revenue 12.5 bn in 2011."]
+    ok, _m, reason = examiner_confirmed(
+        _v(), "12.5 bn", texts, require_citation_specific=True)
+    assert not ok and "did not judge" in reason
+    ok, _m, reason = examiner_confirmed(
+        _v(citation_specific=False, region_supports=True), "12.5 bn", texts,
+        require_citation_specific=True)
+    assert not ok and "not the specific evidence" in reason
+    ok, _m, reason = examiner_confirmed(
+        _v(citation_specific=True, region_supports=False), "12.5 bn", texts,
+        require_citation_specific=True)
+    assert not ok and "does not support" in reason
+    ok, _m, reason = examiner_confirmed(
+        _v(citation_specific=True, region_supports=True), "12.5 bn", texts,
+        require_citation_specific=True)
+    assert ok and reason == ""
+    assert verdict_supported_value(
+        _v(citation_specific=False, region_supports=True)) == 0.0
 
 
 def test_verdict_supported_value():

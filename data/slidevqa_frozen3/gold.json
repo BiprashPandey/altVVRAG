@@ -1,0 +1,1216 @@
+[
+  {
+    "qid": "accel-india-ecommerce-mar14-140401225936-phpapp01_95-0",
+    "question": "How much in dollar is the Online shopping of physical goods in India in 2013?",
+    "answer": "2Bn",
+    "acceptable_answers": [],
+    "doc_id": "accel-india-ecommerce-mar14-140401225936-phpapp01_95",
+    "page": 3,
+    "category": "single-hop",
+    "audit_verdict": "ok"
+  },
+  {
+    "qid": "accel-india-ecommerce-mar14-140401225936-phpapp01_95-1",
+    "question": "How much difference in INR is there between the average order value of CY2013 and that of CY2012?",
+    "answer": "780",
+    "acceptable_answers": [],
+    "doc_id": "accel-india-ecommerce-mar14-140401225936-phpapp01_95",
+    "page": 4,
+    "category": "single-hop",
+    "audit_verdict": "short_answer"
+  },
+  {
+    "qid": "accel-india-ecommerce-mar14-140401225936-phpapp01_95-2",
+    "question": "Which is used more for payment in India in 2013, Credit Cards or Debit Cards?",
+    "answer": "Credit Cards",
+    "acceptable_answers": [],
+    "doc_id": "accel-india-ecommerce-mar14-140401225936-phpapp01_95",
+    "page": 6,
+    "category": "single-hop",
+    "audit_verdict": "ok"
+  },
+  {
+    "qid": "accel-india-ecommerce-mar14-140401225936-phpapp01_95-3",
+    "question": "In which way are more books sold in India in CY 2013, Online or Offline?",
+    "answer": "Offline",
+    "acceptable_answers": [],
+    "doc_id": "accel-india-ecommerce-mar14-140401225936-phpapp01_95",
+    "page": 8,
+    "category": "single-hop",
+    "audit_verdict": "ok"
+  },
+  {
+    "qid": "accel-india-ecommerce-mar14-140401225936-phpapp01_95-4",
+    "question": "How many online shopping orders are made per month in CY2013 in India?",
+    "answer": "5M",
+    "acceptable_answers": [],
+    "doc_id": "accel-india-ecommerce-mar14-140401225936-phpapp01_95",
+    "page": 10,
+    "category": "single-hop",
+    "audit_verdict": "short_answer"
+  },
+  {
+    "qid": "1rnxxoutge4gmfftkliz-140615033824-phpapp02_95-5",
+    "question": "What is the MAIN DISADVANTAGE of INERT GAS?",
+    "answer": "POSES A GRAVE HEALTH HAZARD",
+    "acceptable_answers": [],
+    "doc_id": "1rnxxoutge4gmfftkliz-140615033824-phpapp02_95",
+    "page": 3,
+    "category": "single-hop",
+    "audit_verdict": "ok"
+  },
+  {
+    "qid": "1rnxxoutge4gmfftkliz-140615033824-phpapp02_95-6",
+    "question": "How many ADVANTAGES OF INERT GAS are given?",
+    "answer": "4",
+    "acceptable_answers": [],
+    "doc_id": "1rnxxoutge4gmfftkliz-140615033824-phpapp02_95",
+    "page": 3,
+    "category": "single-hop",
+    "audit_verdict": "short_answer"
+  },
+  {
+    "qid": "1rnxxoutge4gmfftkliz-140615033824-phpapp02_95-7",
+    "question": "What can Provision of an IGS do?",
+    "answer": "give absolute control",
+    "acceptable_answers": [],
+    "doc_id": "1rnxxoutge4gmfftkliz-140615033824-phpapp02_95",
+    "page": 1,
+    "category": "single-hop",
+    "audit_verdict": "ok"
+  },
+  {
+    "qid": "1rnxxoutge4gmfftkliz-140615033824-phpapp02_95-8",
+    "question": "What does an OXYGEN ANALYSER do?",
+    "answer": "Measures OXYGEN by % volume",
+    "acceptable_answers": [],
+    "doc_id": "1rnxxoutge4gmfftkliz-140615033824-phpapp02_95",
+    "page": 4,
+    "category": "single-hop",
+    "audit_verdict": "ok"
+  },
+  {
+    "qid": "1rnxxoutge4gmfftkliz-140615033824-phpapp02_95-9",
+    "question": "What are the Lower and Upper Limits in Air % by Volume for Propane?",
+    "answer": "2.2, 9.5",
+    "acceptable_answers": [],
+    "doc_id": "1rnxxoutge4gmfftkliz-140615033824-phpapp02_95",
+    "page": 7,
+    "category": "single-hop",
+    "audit_verdict": "ocr_typo"
+  },
+  {
+    "qid": "03jongregg-150624022045-lva1-app6892_95-10",
+    "question": "At what time were the greatest number of Searches for Kia Sorento?",
+    "answer": "5pm",
+    "acceptable_answers": [],
+    "doc_id": "03jongregg-150624022045-lva1-app6892_95",
+    "page": 10,
+    "category": "single-hop",
+    "audit_verdict": "short_answer"
+  },
+  {
+    "qid": "03jongregg-150624022045-lva1-app6892_95-11",
+    "question": "Which takes less Processing Time, Hive or Spark?",
+    "answer": "Spark",
+    "acceptable_answers": [],
+    "doc_id": "03jongregg-150624022045-lva1-app6892_95",
+    "page": 12,
+    "category": "single-hop",
+    "audit_verdict": "ok"
+  },
+  {
+    "qid": "03jongregg-150624022045-lva1-app6892_95-12",
+    "question": "Which takes less Processing Time, the solution that is a mature, supported product or Spark?",
+    "answer": "Spark",
+    "acceptable_answers": [],
+    "doc_id": "03jongregg-150624022045-lva1-app6892_95",
+    "page": 9,
+    "category": "single-hop",
+    "audit_verdict": "ok"
+  },
+  {
+    "qid": "03jongregg-150624022045-lva1-app6892_95-13",
+    "question": "How many minutes does Hive take to process 1hr of Site Activity Data?",
+    "answer": "18",
+    "acceptable_answers": [],
+    "doc_id": "03jongregg-150624022045-lva1-app6892_95",
+    "page": 12,
+    "category": "single-hop",
+    "audit_verdict": "short_answer"
+  },
+  {
+    "qid": "2014-thenextweb-smrf-nodexl-sna-socialmedianetworks-140502092744-phpapp01_95-14",
+    "question": "What is the Kodak Brownie Snap-Shot Camera?",
+    "answer": "first easy to use point and shoot",
+    "acceptable_answers": [],
+    "doc_id": "2014-thenextweb-smrf-nodexl-sna-socialmedianetworks-140502092744-phpapp01_95",
+    "page": 6,
+    "category": "single-hop",
+    "audit_verdict": "ok"
+  },
+  {
+    "qid": "2014-thenextweb-smrf-nodexl-sna-socialmedianetworks-140502092744-phpapp01_95-15",
+    "question": "What is Social Media about?",
+    "answer": "connections from people to people",
+    "acceptable_answers": [],
+    "doc_id": "2014-thenextweb-smrf-nodexl-sna-socialmedianetworks-140502092744-phpapp01_95",
+    "page": 9,
+    "category": "single-hop",
+    "audit_verdict": "partial"
+  },
+  {
+    "qid": "2014-thenextweb-smrf-nodexl-sna-socialmedianetworks-140502092744-phpapp01_95-16",
+    "question": "What are examples of Internet Verbs?",
+    "answer": "Send, Mention, Like, Link, Reply, Rate, Review, Favorite, Friend, Follow, Forward, Edit, Tag, Comment, Check-in",
+    "acceptable_answers": [],
+    "doc_id": "2014-thenextweb-smrf-nodexl-sna-socialmedianetworks-140502092744-phpapp01_95",
+    "page": 11,
+    "category": "single-hop",
+    "audit_verdict": "ok"
+  },
+  {
+    "qid": "2014-thenextweb-smrf-nodexl-sna-socialmedianetworks-140502092744-phpapp01_95-17",
+    "question": "What is the source of the map?",
+    "answer": "Zillow.com",
+    "acceptable_answers": [],
+    "doc_id": "2014-thenextweb-smrf-nodexl-sna-socialmedianetworks-140502092744-phpapp01_95",
+    "page": 17,
+    "category": "single-hop",
+    "audit_verdict": "short_answer"
+  },
+  {
+    "qid": "2014realestatemarketupdateand2015forecastphilippinerealestate-150123020706-conversion-gate02_95-18",
+    "question": "What organizations are the authors of the presentation titled \"2014 Real Estate Market Update & 2015 Outlook\"?",
+    "answer": "KMC MAG Group, savills, eccp",
+    "acceptable_answers": [],
+    "doc_id": "2014realestatemarketupdateand2015forecastphilippinerealestate-150123020706-conversion-gate02_95",
+    "page": 0,
+    "category": "single-hop",
+    "audit_verdict": "partial"
+  },
+  {
+    "qid": "2014realestatemarketupdateand2015forecastphilippinerealestate-150123020706-conversion-gate02_95-19",
+    "question": "How many people does KMC MAG Group employ?",
+    "answer": "Over 100",
+    "acceptable_answers": [],
+    "doc_id": "2014realestatemarketupdateand2015forecastphilippinerealestate-150123020706-conversion-gate02_95",
+    "page": 2,
+    "category": "single-hop",
+    "audit_verdict": "partial"
+  },
+  {
+    "qid": "2014realestatemarketupdateand2015forecastphilippinerealestate-150123020706-conversion-gate02_95-20",
+    "question": "What is the CAPEX of listed RE Developers in 2014 in Billions?",
+    "answer": "6.0",
+    "acceptable_answers": [],
+    "doc_id": "2014realestatemarketupdateand2015forecastphilippinerealestate-150123020706-conversion-gate02_95",
+    "page": 7,
+    "category": "single-hop",
+    "audit_verdict": "short_answer"
+  },
+  {
+    "qid": "2014realestatemarketupdateand2015forecastphilippinerealestate-150123020706-conversion-gate02_95-21",
+    "question": "Which city has the lowest Grade A Office Cap Rate?",
+    "answer": "Taipei",
+    "acceptable_answers": [],
+    "doc_id": "2014realestatemarketupdateand2015forecastphilippinerealestate-150123020706-conversion-gate02_95",
+    "page": 18,
+    "category": "single-hop",
+    "audit_verdict": "short_answer"
+  },
+  {
+    "qid": "2014realestatemarketupdateand2015forecastphilippinerealestate-150123020706-conversion-gate02_95-22",
+    "question": "What percentage is the Grade A Office Cap Rate in Tokyo?",
+    "answer": "3.65",
+    "acceptable_answers": [],
+    "doc_id": "2014realestatemarketupdateand2015forecastphilippinerealestate-150123020706-conversion-gate02_95",
+    "page": 18,
+    "category": "single-hop",
+    "audit_verdict": "short_answer"
+  },
+  {
+    "qid": "2014realestatemarketupdateand2015forecastphilippinerealestate-150123020706-conversion-gate02_95-23",
+    "question": "What percentage is the Grade A Office Cap Rate in the city in Japan where there is a Savills office?",
+    "answer": "3.65",
+    "acceptable_answers": [],
+    "doc_id": "2014realestatemarketupdateand2015forecastphilippinerealestate-150123020706-conversion-gate02_95",
+    "page": 3,
+    "category": "single-hop",
+    "audit_verdict": "short_answer"
+  },
+  {
+    "qid": "1-160120162033_95-24",
+    "question": "How many Tools You Can Use are there?",
+    "answer": "12",
+    "acceptable_answers": [],
+    "doc_id": "1-160120162033_95",
+    "page": 2,
+    "category": "single-hop",
+    "audit_verdict": "short_answer"
+  },
+  {
+    "qid": "1-160120162033_95-25",
+    "question": "What is futureworkplace's motto?",
+    "answer": "innovations to attract, develop and keep talent",
+    "acceptable_answers": [],
+    "doc_id": "1-160120162033_95",
+    "page": 6,
+    "category": "single-hop",
+    "audit_verdict": "ok"
+  },
+  {
+    "qid": "1-160120162033_95-26",
+    "question": "What positions does the category Executives include?",
+    "answer": "VP, SVP, EVP",
+    "acceptable_answers": [],
+    "doc_id": "1-160120162033_95",
+    "page": 8,
+    "category": "single-hop",
+    "audit_verdict": "partial"
+  },
+  {
+    "qid": "1-160120162033_95-27",
+    "question": "What is the Shift towards?",
+    "answer": "Transformational leadership",
+    "acceptable_answers": [],
+    "doc_id": "1-160120162033_95",
+    "page": 10,
+    "category": "single-hop",
+    "audit_verdict": "ocr_typo"
+  },
+  {
+    "qid": "00mlearn2011glahn-111020092730-phpapp02_95-28",
+    "question": "Which Cluster ranks highest in Importance?",
+    "answer": "Access to learning",
+    "acceptable_answers": [],
+    "doc_id": "00mlearn2011glahn-111020092730-phpapp02_95",
+    "page": 11,
+    "category": "single-hop",
+    "audit_verdict": "ok"
+  },
+  {
+    "qid": "00mlearn2011glahn-111020092730-phpapp02_95-29",
+    "question": "What is the Feasibility score for Limitations for learning?",
+    "answer": "2.80",
+    "acceptable_answers": [],
+    "doc_id": "00mlearn2011glahn-111020092730-phpapp02_95",
+    "page": 11,
+    "category": "single-hop",
+    "audit_verdict": "ok"
+  },
+  {
+    "qid": "00mlearn2011glahn-111020092730-phpapp02_95-30",
+    "question": "What are two components of Access to Learning?",
+    "answer": "Flexible Learning, E-Inclusion",
+    "acceptable_answers": [],
+    "doc_id": "00mlearn2011glahn-111020092730-phpapp02_95",
+    "page": 13,
+    "category": "single-hop",
+    "audit_verdict": "partial"
+  },
+  {
+    "qid": "2015-holiday-prediction-report-151027133029-lva1-app6892_95-31",
+    "question": "What percentage of online sales does 1% of products drive?",
+    "answer": "65",
+    "acceptable_answers": [],
+    "doc_id": "2015-holiday-prediction-report-151027133029-lva1-app6892_95",
+    "page": 4,
+    "category": "single-hop",
+    "audit_verdict": "ok"
+  },
+  {
+    "qid": "2015-holiday-prediction-report-151027133029-lva1-app6892_95-32",
+    "question": "Are sales stronger on CYBER MONDAY or BLACK FRIDAY?",
+    "answer": "CYBER MONDAY",
+    "acceptable_answers": [],
+    "doc_id": "2015-holiday-prediction-report-151027133029-lva1-app6892_95",
+    "page": 5,
+    "category": "single-hop",
+    "audit_verdict": "ok"
+  },
+  {
+    "qid": "2015-holiday-prediction-report-151027133029-lva1-app6892_95-33",
+    "question": "When is SHIPPING CHEAPEST?",
+    "answer": "THANKSGIVING, CYBER MONDAY",
+    "acceptable_answers": [],
+    "doc_id": "2015-holiday-prediction-report-151027133029-lva1-app6892_95",
+    "page": 8,
+    "category": "single-hop",
+    "audit_verdict": "ok"
+  },
+  {
+    "qid": "2015-holiday-prediction-report-151027133029-lva1-app6892_95-34",
+    "question": "Which social channel generates the most REVENUE PER VISIT?",
+    "answer": "Facebook",
+    "acceptable_answers": [],
+    "doc_id": "2015-holiday-prediction-report-151027133029-lva1-app6892_95",
+    "page": 10,
+    "category": "single-hop",
+    "audit_verdict": "ok"
+  },
+  {
+    "qid": "2015-holiday-prediction-report-151027133029-lva1-app6892_95-35",
+    "question": "What holiday gift received the most SOCIAL MENTIONS?",
+    "answer": "STAR WARS BB-8",
+    "acceptable_answers": [],
+    "doc_id": "2015-holiday-prediction-report-151027133029-lva1-app6892_95",
+    "page": 11,
+    "category": "single-hop",
+    "audit_verdict": "ok"
+  },
+  {
+    "qid": "11-reactionsofalcohols-wade7th-140409022905-phpapp01_95-36",
+    "question": "What comes after type of reaction in the data flow?",
+    "answer": "Product",
+    "acceptable_answers": [],
+    "doc_id": "11-reactionsofalcohols-wade7th-140409022905-phpapp01_95",
+    "page": 2,
+    "category": "single-hop",
+    "audit_verdict": "ok"
+  },
+  {
+    "qid": "11-reactionsofalcohols-wade7th-140409022905-phpapp01_95-37",
+    "question": "What is the product of oxidation?",
+    "answer": "ketones, aldehydes, acids",
+    "acceptable_answers": [],
+    "doc_id": "11-reactionsofalcohols-wade7th-140409022905-phpapp01_95",
+    "page": 2,
+    "category": "single-hop",
+    "audit_verdict": "ok"
+  },
+  {
+    "qid": "11-reactionsofalcohols-wade7th-140409022905-phpapp01_95-38",
+    "question": "What is the Reagent for carboxylic acid?",
+    "answer": "chromic acid",
+    "acceptable_answers": [],
+    "doc_id": "11-reactionsofalcohols-wade7th-140409022905-phpapp01_95",
+    "page": 10,
+    "category": "single-hop",
+    "audit_verdict": "ok"
+  },
+  {
+    "qid": "11-reactionsofalcohols-wade7th-140409022905-phpapp01_95-39",
+    "question": "What is a weak nucleophile?",
+    "answer": "ROH",
+    "acceptable_answers": [],
+    "doc_id": "11-reactionsofalcohols-wade7th-140409022905-phpapp01_95",
+    "page": 19,
+    "category": "single-hop",
+    "audit_verdict": "ok"
+  },
+  {
+    "qid": "11-reactionsofalcohols-wade7th-140409022905-phpapp01_95-40",
+    "question": "Is RO a strong or weak nucleophile?",
+    "answer": "strong",
+    "acceptable_answers": [],
+    "doc_id": "11-reactionsofalcohols-wade7th-140409022905-phpapp01_95",
+    "page": 19,
+    "category": "single-hop",
+    "audit_verdict": "ok"
+  },
+  {
+    "qid": "50greatbrandedentertainmentexamples-131023135825-phpapp01_95-41",
+    "question": "How many professionals will share their examples and feed back during the next PARIS 2.0?",
+    "answer": "50",
+    "acceptable_answers": [],
+    "doc_id": "50greatbrandedentertainmentexamples-131023135825-phpapp01_95",
+    "page": 1,
+    "category": "single-hop",
+    "audit_verdict": "short_answer"
+  },
+  {
+    "qid": "50greatbrandedentertainmentexamples-131023135825-phpapp01_95-42",
+    "question": "How many professionals will share their examples and feed back during the next events whose blog can be found at www.contagiousideas.fr?",
+    "answer": "50",
+    "acceptable_answers": [],
+    "doc_id": "50greatbrandedentertainmentexamples-131023135825-phpapp01_95",
+    "page": 1,
+    "category": "single-hop",
+    "audit_verdict": "short_answer"
+  },
+  {
+    "qid": "50greatbrandedentertainmentexamples-131023135825-phpapp01_95-43",
+    "question": "What are the 4 primary media devices?",
+    "answer": "Smartphone, Tablet, PC/Laptop, TV",
+    "acceptable_answers": [],
+    "doc_id": "50greatbrandedentertainmentexamples-131023135825-phpapp01_95",
+    "page": 13,
+    "page_original": 11,
+    "page_note": "corrected by frozen3 gold audit (answer coverage best page)",
+    "category": "single-hop",
+    "audit_verdict": "page_mismatch"
+  },
+  {
+    "qid": "50greatbrandedentertainmentexamples-131023135825-phpapp01_95-44",
+    "question": "Which device has the highest Avg. time spent per interaction?",
+    "answer": "TV",
+    "acceptable_answers": [],
+    "doc_id": "50greatbrandedentertainmentexamples-131023135825-phpapp01_95",
+    "page": 11,
+    "category": "single-hop",
+    "audit_verdict": "short_answer"
+  },
+  {
+    "qid": "50greatbrandedentertainmentexamples-131023135825-phpapp01_95-45",
+    "question": "What percentage of media interactions are not screen based?",
+    "answer": "10",
+    "acceptable_answers": [],
+    "doc_id": "50greatbrandedentertainmentexamples-131023135825-phpapp01_95",
+    "page": 12,
+    "category": "single-hop",
+    "audit_verdict": "short_answer"
+  },
+  {
+    "qid": "50greatbrandedentertainmentexamples-131023135825-phpapp01_95-46",
+    "question": "What are three examples of non-screen based media?",
+    "answer": "Radio, Newspaper, Magazine",
+    "acceptable_answers": [],
+    "doc_id": "50greatbrandedentertainmentexamples-131023135825-phpapp01_95",
+    "page": 12,
+    "category": "single-hop",
+    "audit_verdict": "ok"
+  },
+  {
+    "qid": "160219-social-teaming-101-for-sales-professionals-final-160219191544_95-47",
+    "question": "What is the phone number for Audio Problems during the webinar?",
+    "answer": "(415) 930-5321",
+    "acceptable_answers": [],
+    "doc_id": "160219-social-teaming-101-for-sales-professionals-final-160219191544_95",
+    "page": 3,
+    "category": "single-hop",
+    "audit_verdict": "ok"
+  },
+  {
+    "qid": "160219-social-teaming-101-for-sales-professionals-final-160219191544_95-48",
+    "question": "Which is the top ranking Information Resource at the Final Stage?",
+    "answer": "Professional social networks",
+    "acceptable_answers": [],
+    "doc_id": "160219-social-teaming-101-for-sales-professionals-final-160219191544_95",
+    "page": 5,
+    "category": "single-hop",
+    "audit_verdict": "ok"
+  },
+  {
+    "qid": "160219-social-teaming-101-for-sales-professionals-final-160219191544_95-49",
+    "question": "How many LinkedIn profiles are viewed every day?",
+    "answer": "Over 25 million",
+    "acceptable_answers": [],
+    "doc_id": "160219-social-teaming-101-for-sales-professionals-final-160219191544_95",
+    "page": 12,
+    "category": "single-hop",
+    "audit_verdict": "ok"
+  },
+  {
+    "qid": "160219-social-teaming-101-for-sales-professionals-final-160219191544_95-50",
+    "question": "How many profiles are viewed every day on the social website that has over 350 million members and where the average user has 240 connections?",
+    "answer": "Over 25 million",
+    "acceptable_answers": [],
+    "doc_id": "160219-social-teaming-101-for-sales-professionals-final-160219191544_95",
+    "page": 12,
+    "page_original": 10,
+    "page_note": "corrected by frozen3 gold audit (answer coverage best page)",
+    "category": "single-hop",
+    "audit_verdict": "page_mismatch"
+  },
+  {
+    "qid": "160219-social-teaming-101-for-sales-professionals-final-160219191544_95-51",
+    "question": "Which company page has the most engaged following on LinkedIn?",
+    "answer": "Mashable",
+    "acceptable_answers": [],
+    "doc_id": "160219-social-teaming-101-for-sales-professionals-final-160219191544_95",
+    "page": 12,
+    "category": "single-hop",
+    "audit_verdict": "short_answer"
+  },
+  {
+    "qid": "160219-social-teaming-101-for-sales-professionals-final-160219191544_95-52",
+    "question": "What are the six components for Your Company?",
+    "answer": "Clients, Partners, Chamber, Charities, Employees, Conferences",
+    "acceptable_answers": [],
+    "doc_id": "160219-social-teaming-101-for-sales-professionals-final-160219191544_95",
+    "page": 16,
+    "category": "single-hop",
+    "audit_verdict": "ocr_typo"
+  },
+  {
+    "qid": "7predictionsaboutthefutureofmedia-151214192034_95-53",
+    "question": "What has the second highest Media Consumption after Digital?",
+    "answer": "TV",
+    "acceptable_answers": [],
+    "doc_id": "7predictionsaboutthefutureofmedia-151214192034_95",
+    "page": 2,
+    "category": "single-hop",
+    "audit_verdict": "ok"
+  },
+  {
+    "qid": "7predictionsaboutthefutureofmedia-151214192034_95-54",
+    "question": "What has the second highest Media Consumption after the media that will inherit the Earth?",
+    "answer": "TV",
+    "acceptable_answers": [],
+    "doc_id": "7predictionsaboutthefutureofmedia-151214192034_95",
+    "page": 1,
+    "category": "single-hop",
+    "audit_verdict": "short_answer"
+  },
+  {
+    "qid": "7predictionsaboutthefutureofmedia-151214192034_95-55",
+    "question": "How many percentage points did Digital Media Consumption gain from 2011 to 2015?",
+    "answer": "13.2",
+    "acceptable_answers": [],
+    "doc_id": "7predictionsaboutthefutureofmedia-151214192034_95",
+    "page": 2,
+    "category": "single-hop",
+    "audit_verdict": "short_answer"
+  },
+  {
+    "qid": "7predictionsaboutthefutureofmedia-151214192034_95-56",
+    "question": "How many percentage points did consumption of the media that's been growing every year gain from 2011 to 2015?",
+    "answer": "13.2",
+    "acceptable_answers": [],
+    "doc_id": "7predictionsaboutthefutureofmedia-151214192034_95",
+    "page": 2,
+    "category": "single-hop",
+    "audit_verdict": "short_answer"
+  },
+  {
+    "qid": "7predictionsaboutthefutureofmedia-151214192034_95-57",
+    "question": "Which age group is the least likely to listen to the radio?",
+    "answer": "16-24",
+    "acceptable_answers": [],
+    "doc_id": "7predictionsaboutthefutureofmedia-151214192034_95",
+    "page": 4,
+    "category": "single-hop",
+    "audit_verdict": "ok"
+  },
+  {
+    "qid": "7predictionsaboutthefutureofmedia-151214192034_95-58",
+    "question": "Which age group is the least likely to consume the media that is, along with print, projected to make up less than 10-percent of all media consumption in 2030?",
+    "answer": "16-24",
+    "acceptable_answers": [],
+    "doc_id": "7predictionsaboutthefutureofmedia-151214192034_95",
+    "page": 4,
+    "category": "single-hop",
+    "audit_verdict": "ok"
+  },
+  {
+    "qid": "7predictionsaboutthefutureofmedia-151214192034_95-59",
+    "question": "Which Generation accounts for the highest percentage of the Population?",
+    "answer": "Baby Boomers",
+    "acceptable_answers": [],
+    "doc_id": "7predictionsaboutthefutureofmedia-151214192034_95",
+    "page": 5,
+    "category": "single-hop",
+    "audit_verdict": "ok"
+  },
+  {
+    "qid": "7predictionsaboutthefutureofmedia-151214192034_95-60",
+    "question": "What percentage of respondents Agree that their smartphone never leaves their side, night or day?",
+    "answer": "87.0",
+    "acceptable_answers": [],
+    "doc_id": "7predictionsaboutthefutureofmedia-151214192034_95",
+    "page": 11,
+    "category": "single-hop",
+    "audit_verdict": "ok"
+  },
+  {
+    "qid": "2-141210222854-conversion-gate02_95-61",
+    "question": "What is ppmv an abbreviation for?",
+    "answer": "parts per million by volume",
+    "acceptable_answers": [],
+    "doc_id": "2-141210222854-conversion-gate02_95",
+    "page": 5,
+    "category": "single-hop",
+    "audit_verdict": "ok"
+  },
+  {
+    "qid": "2-141210222854-conversion-gate02_95-62",
+    "question": "What are the five regions of the atmosphere?",
+    "answer": "Exosphere, Thermosphere, Mesosphere, Stratosphere, Troposphere",
+    "acceptable_answers": [],
+    "doc_id": "2-141210222854-conversion-gate02_95",
+    "page": 6,
+    "category": "single-hop",
+    "audit_verdict": "ok"
+  },
+  {
+    "qid": "2-141210222854-conversion-gate02_95-63",
+    "question": "What are the five regions of the thin envelope of gases surrounding the earth?",
+    "answer": "Exosphere, Thermosphere, Mesosphere, Stratosphere, Troposphere",
+    "acceptable_answers": [],
+    "doc_id": "2-141210222854-conversion-gate02_95",
+    "page": 6,
+    "page_original": 3,
+    "page_note": "corrected by frozen3 gold audit (answer coverage best page)",
+    "category": "single-hop",
+    "audit_verdict": "page_mismatch"
+  },
+  {
+    "qid": "2-141210222854-conversion-gate02_95-64",
+    "question": "What is the upper limit of the Mesosphere's altitude in kilometers?",
+    "answer": "80",
+    "acceptable_answers": [],
+    "doc_id": "2-141210222854-conversion-gate02_95",
+    "page": 9,
+    "category": "single-hop",
+    "audit_verdict": "ok"
+  },
+  {
+    "qid": "2-141210222854-conversion-gate02_95-65",
+    "question": "What is the upper limit in kilometers of the altitude of the atmospheric layer that is bordered at its bottom by the stratopause?",
+    "answer": "80",
+    "acceptable_answers": [],
+    "doc_id": "2-141210222854-conversion-gate02_95",
+    "page": 9,
+    "category": "single-hop",
+    "audit_verdict": "ok"
+  },
+  {
+    "qid": "2-141210222854-conversion-gate02_95-66",
+    "question": "Which region of the atmosphere is lowest in altitude?",
+    "answer": "Troposphere",
+    "acceptable_answers": [],
+    "doc_id": "2-141210222854-conversion-gate02_95",
+    "page": 12,
+    "category": "single-hop",
+    "audit_verdict": "short_answer"
+  },
+  {
+    "qid": "2-141210222854-conversion-gate02_95-67",
+    "question": "What percentage of Water on Earth is Freshwater?",
+    "answer": "3",
+    "acceptable_answers": [],
+    "doc_id": "2-141210222854-conversion-gate02_95",
+    "page": 18,
+    "category": "single-hop",
+    "audit_verdict": "ok"
+  },
+  {
+    "qid": "2-141210222854-conversion-gate02_95-68",
+    "question": "What percentage of Water on our \"Blue Planet\" is Freshwater?",
+    "answer": "3",
+    "acceptable_answers": [],
+    "doc_id": "2-141210222854-conversion-gate02_95",
+    "page": 14,
+    "category": "single-hop",
+    "audit_verdict": "short_answer"
+  },
+  {
+    "qid": "adcrupak-151111030756-lva1-app6891_95-69",
+    "question": "What is Pondicherry University's motto?",
+    "answer": "VERS LA LUMIÈRE",
+    "acceptable_answers": [],
+    "doc_id": "adcrupak-151111030756-lva1-app6891_95",
+    "page": 0,
+    "category": "image-only",
+    "audit_verdict": "image_only"
+  },
+  {
+    "qid": "adcrupak-151111030756-lva1-app6891_95-70",
+    "question": "What comes after mapper in the flowchart?",
+    "answer": "channel",
+    "acceptable_answers": [],
+    "doc_id": "adcrupak-151111030756-lva1-app6891_95",
+    "page": 4,
+    "category": "single-hop",
+    "audit_verdict": "ok"
+  },
+  {
+    "qid": "adcrupak-151111030756-lva1-app6891_95-71",
+    "question": "What comes after the process that maps binary bits in the flowchart?",
+    "answer": "channel",
+    "acceptable_answers": [],
+    "doc_id": "adcrupak-151111030756-lva1-app6891_95",
+    "page": 4,
+    "category": "single-hop",
+    "audit_verdict": "ok"
+  },
+  {
+    "qid": "32boacqbs79b2nwa18k1-signature-196231be70c3023fe5be2687ddced8055fa698a74f2804631a340e01d16802eb-poli-151110142611-lva1-app6891_95-72",
+    "question": "What is Karin Robinson's social media handle?",
+    "answer": "@karinjr",
+    "acceptable_answers": [],
+    "doc_id": "32boacqbs79b2nwa18k1-signature-196231be70c3023fe5be2687ddced8055fa698a74f2804631a340e01d16802eb-poli-151110142611-lva1-a",
+    "page": 1,
+    "category": "single-hop",
+    "audit_verdict": "ok"
+  },
+  {
+    "qid": "32boacqbs79b2nwa18k1-signature-196231be70c3023fe5be2687ddced8055fa698a74f2804631a340e01d16802eb-poli-151110142611-lva1-app6891_95-73",
+    "question": "What is the author of this presentation's social media handle?",
+    "answer": "@karinjr",
+    "acceptable_answers": [],
+    "doc_id": "32boacqbs79b2nwa18k1-signature-196231be70c3023fe5be2687ddced8055fa698a74f2804631a340e01d16802eb-poli-151110142611-lva1-a",
+    "page": 0,
+    "category": "single-hop",
+    "audit_verdict": "short_answer"
+  },
+  {
+    "qid": "32boacqbs79b2nwa18k1-signature-196231be70c3023fe5be2687ddced8055fa698a74f2804631a340e01d16802eb-poli-151110142611-lva1-app6891_95-74",
+    "question": "Who is the author of the presentation entitled \"Lies, Damn Lies and Social Statistics\"?",
+    "answer": "KARIN ROBINSON",
+    "acceptable_answers": [],
+    "doc_id": "32boacqbs79b2nwa18k1-signature-196231be70c3023fe5be2687ddced8055fa698a74f2804631a340e01d16802eb-poli-151110142611-lva1-a",
+    "page": 1,
+    "page_original": 0,
+    "page_note": "corrected by frozen3 gold audit (answer coverage best page)",
+    "category": "single-hop",
+    "audit_verdict": "page_mismatch"
+  },
+  {
+    "qid": "32boacqbs79b2nwa18k1-signature-196231be70c3023fe5be2687ddced8055fa698a74f2804631a340e01d16802eb-poli-151110142611-lva1-app6891_95-75",
+    "question": "Which occupation's Sentiment is the most Negative?",
+    "answer": "Scientist & Researcher",
+    "acceptable_answers": [],
+    "doc_id": "32boacqbs79b2nwa18k1-signature-196231be70c3023fe5be2687ddced8055fa698a74f2804631a340e01d16802eb-poli-151110142611-lva1-a",
+    "page": 12,
+    "category": "image-only",
+    "audit_verdict": "image_only"
+  },
+  {
+    "qid": "32boacqbs79b2nwa18k1-signature-196231be70c3023fe5be2687ddced8055fa698a74f2804631a340e01d16802eb-poli-151110142611-lva1-app6891_95-76",
+    "question": "What is the top Sharing Channel?",
+    "answer": "Dark Social",
+    "acceptable_answers": [],
+    "doc_id": "32boacqbs79b2nwa18k1-signature-196231be70c3023fe5be2687ddced8055fa698a74f2804631a340e01d16802eb-poli-151110142611-lva1-a",
+    "page": 19,
+    "category": "single-hop",
+    "audit_verdict": "ok"
+  },
+  {
+    "qid": "adidus-110910013919-phpapp01_95-77",
+    "question": "When was Adidas founded?",
+    "answer": "1924",
+    "acceptable_answers": [],
+    "doc_id": "adidus-110910013919-phpapp01_95",
+    "page": 2,
+    "category": "single-hop",
+    "audit_verdict": "ok"
+  },
+  {
+    "qid": "adidus-110910013919-phpapp01_95-78",
+    "question": "When was the company that was first named Dassler Shoes founded?",
+    "answer": "1924",
+    "acceptable_answers": [],
+    "doc_id": "adidus-110910013919-phpapp01_95",
+    "page": 1,
+    "category": "single-hop",
+    "audit_verdict": "ok"
+  },
+  {
+    "qid": "adidus-110910013919-phpapp01_95-79",
+    "question": "What three factors contribute to the company's GLOBALIZATION?",
+    "answer": "HIGH QUALITY, COMPETITIVE PRICE, BEST DELIVERY",
+    "acceptable_answers": [],
+    "doc_id": "adidus-110910013919-phpapp01_95",
+    "page": 3,
+    "category": "single-hop",
+    "audit_verdict": "ok"
+  },
+  {
+    "qid": "adidus-110910013919-phpapp01_95-80",
+    "question": "What are the categories in the Brand Identity Prism?",
+    "answer": "Physical product, Personality, Culture, Self-Image, Reflection, Relation",
+    "acceptable_answers": [],
+    "doc_id": "adidus-110910013919-phpapp01_95",
+    "page": 7,
+    "category": "single-hop",
+    "audit_verdict": "ok"
+  },
+  {
+    "qid": "adidus-110910013919-phpapp01_95-81",
+    "question": "What is the brand's identity in the Culture category?",
+    "answer": "European, Traditional",
+    "acceptable_answers": [],
+    "doc_id": "adidus-110910013919-phpapp01_95",
+    "page": 7,
+    "category": "single-hop",
+    "audit_verdict": "ok"
+  },
+  {
+    "qid": "adidus-110910013919-phpapp01_95-82",
+    "question": "What is the identity in the Culture category of the company that was founded in Germany in 1924 by the brothers Adolf and Rudolf Dassler?",
+    "answer": "European, Traditional",
+    "acceptable_answers": [],
+    "doc_id": "adidus-110910013919-phpapp01_95",
+    "page": 7,
+    "page_original": 1,
+    "page_note": "corrected by frozen3 gold audit (answer coverage best page)",
+    "category": "single-hop",
+    "audit_verdict": "page_mismatch"
+  },
+  {
+    "qid": "adidus-110910013919-phpapp01_95-83",
+    "question": "What is above Ceiling price?",
+    "answer": "High Price (No possible demand at this price)",
+    "acceptable_answers": [],
+    "doc_id": "adidus-110910013919-phpapp01_95",
+    "page": 9,
+    "category": "single-hop",
+    "audit_verdict": "ocr_typo"
+  },
+  {
+    "qid": "6n9am0tzrteffgtfhfo7-signature-a48386bef1d04116b4103d32995570754965fd332e3318eba086b83292751980-poli-140816080558-phpapp01_95-84",
+    "question": "What does the User think when given the maximum Number of Features?",
+    "answer": "\"I Suck!\"",
+    "acceptable_answers": [],
+    "doc_id": "6n9am0tzrteffgtfhfo7-signature-a48386bef1d04116b4103d32995570754965fd332e3318eba086b83292751980-poli-140816080558-phpapp",
+    "page": 3,
+    "category": "single-hop",
+    "audit_verdict": "ok"
+  },
+  {
+    "qid": "6n9am0tzrteffgtfhfo7-signature-a48386bef1d04116b4103d32995570754965fd332e3318eba086b83292751980-poli-140816080558-phpapp01_95-85",
+    "question": "What does MVP stand for?",
+    "answer": "Minimal Viable Product",
+    "acceptable_answers": [],
+    "doc_id": "6n9am0tzrteffgtfhfo7-signature-a48386bef1d04116b4103d32995570754965fd332e3318eba086b83292751980-poli-140816080558-phpapp",
+    "page": 6,
+    "category": "single-hop",
+    "audit_verdict": "ok"
+  },
+  {
+    "qid": "6n9am0tzrteffgtfhfo7-signature-a48386bef1d04116b4103d32995570754965fd332e3318eba086b83292751980-poli-140816080558-phpapp01_95-86",
+    "question": "Who Sets the Strategic Vision?",
+    "answer": "the CEO / Board",
+    "acceptable_answers": [],
+    "doc_id": "6n9am0tzrteffgtfhfo7-signature-a48386bef1d04116b4103d32995570754965fd332e3318eba086b83292751980-poli-140816080558-phpapp",
+    "page": 15,
+    "category": "single-hop",
+    "audit_verdict": "ok"
+  },
+  {
+    "qid": "6n9am0tzrteffgtfhfo7-signature-a48386bef1d04116b4103d32995570754965fd332e3318eba086b83292751980-poli-140816080558-phpapp01_95-87",
+    "question": "What provides a Futuristic picture of the product?",
+    "answer": "Product Vision",
+    "acceptable_answers": [],
+    "doc_id": "6n9am0tzrteffgtfhfo7-signature-a48386bef1d04116b4103d32995570754965fd332e3318eba086b83292751980-poli-140816080558-phpapp",
+    "page": 15,
+    "page_original": 16,
+    "page_note": "corrected by frozen3 gold audit (answer coverage best page)",
+    "category": "single-hop",
+    "audit_verdict": "page_mismatch"
+  },
+  {
+    "qid": "6n9am0tzrteffgtfhfo7-signature-a48386bef1d04116b4103d32995570754965fd332e3318eba086b83292751980-poli-140816080558-phpapp01_95-88",
+    "question": "What development type has a greater Risk of failure over time, Waterfall or Agile?",
+    "answer": "Waterfall",
+    "acceptable_answers": [],
+    "doc_id": "6n9am0tzrteffgtfhfo7-signature-a48386bef1d04116b4103d32995570754965fd332e3318eba086b83292751980-poli-140816080558-phpapp",
+    "page": 12,
+    "category": "single-hop",
+    "audit_verdict": "ok"
+  },
+  {
+    "qid": "6n9am0tzrteffgtfhfo7-signature-a48386bef1d04116b4103d32995570754965fd332e3318eba086b83292751980-poli-140816080558-phpapp01_95-89",
+    "question": "What development type has a greater Risk of failure over time, Waterfall or the type whose manifesto includes \"Responding to change over following a plan\"?",
+    "answer": "Waterfall",
+    "acceptable_answers": [],
+    "doc_id": "6n9am0tzrteffgtfhfo7-signature-a48386bef1d04116b4103d32995570754965fd332e3318eba086b83292751980-poli-140816080558-phpapp",
+    "page": 9,
+    "category": "single-hop",
+    "audit_verdict": "short_answer"
+  },
+  {
+    "qid": "advbrandsxswfinal3-150317171325-conversion-gate01_95-90",
+    "question": "When does the Cash Flow become positive?",
+    "answer": "Month 14",
+    "acceptable_answers": [],
+    "doc_id": "advbrandsxswfinal3-150317171325-conversion-gate01_95",
+    "page": 10,
+    "category": "single-hop",
+    "audit_verdict": "partial"
+  },
+  {
+    "qid": "45305-macpa-140506135017-phpapp01_95-91",
+    "question": "Between 1974 and 2014, how many years was there a Surplus?",
+    "answer": "4",
+    "acceptable_answers": [],
+    "doc_id": "45305-macpa-140506135017-phpapp01_95",
+    "page": 7,
+    "category": "single-hop",
+    "audit_verdict": "ok"
+  },
+  {
+    "qid": "45305-macpa-140506135017-phpapp01_95-92",
+    "question": "Between the year that the Congressional Budget and Impoundment Control Act was passed and 2014, how many years was there a Surplus?",
+    "answer": "4",
+    "acceptable_answers": [],
+    "doc_id": "45305-macpa-140506135017-phpapp01_95",
+    "page": 1,
+    "category": "single-hop",
+    "audit_verdict": "short_answer"
+  },
+  {
+    "qid": "45305-macpa-140506135017-phpapp01_95-93",
+    "question": "Is the Debt Held by the Public expected to increase or decrease in 2024?",
+    "answer": "Increase",
+    "acceptable_answers": [],
+    "doc_id": "45305-macpa-140506135017-phpapp01_95",
+    "page": 15,
+    "category": "single-hop",
+    "audit_verdict": "short_answer"
+  },
+  {
+    "qid": "45305-macpa-140506135017-phpapp01_95-94",
+    "question": "What were the Total Revenues in Billions of Dollars in 2009?",
+    "answer": "2,105",
+    "acceptable_answers": [],
+    "doc_id": "45305-macpa-140506135017-phpapp01_95",
+    "page": 6,
+    "category": "single-hop",
+    "audit_verdict": "ok"
+  },
+  {
+    "qid": "akzonobelcmd2015tcm9-93597-151027140208-lva1-app6892_95-95",
+    "question": "Who will present on Specialty Chemicals?",
+    "answer": "Werner Fuhrmann",
+    "acceptable_answers": [],
+    "doc_id": "akzonobelcmd2015tcm9-93597-151027140208-lva1-app6892_95",
+    "page": 1,
+    "category": "single-hop",
+    "audit_verdict": "ok"
+  },
+  {
+    "qid": "akzonobelcmd2015tcm9-93597-151027140208-lva1-app6892_95-96",
+    "question": "Who will present on the business area whose planned transformation includes the divestment of Paper Chemicals?",
+    "answer": "Werner Fuhrmann",
+    "acceptable_answers": [],
+    "doc_id": "akzonobelcmd2015tcm9-93597-151027140208-lva1-app6892_95",
+    "page": 1,
+    "category": "single-hop",
+    "audit_verdict": "ok"
+  },
+  {
+    "qid": "akzonobelcmd2015tcm9-93597-151027140208-lva1-app6892_95-97",
+    "question": "How much is the Global paints and coatings market worth in billions of euro?",
+    "answer": "100",
+    "acceptable_answers": [],
+    "doc_id": "akzonobelcmd2015tcm9-93597-151027140208-lva1-app6892_95",
+    "page": 6,
+    "category": "single-hop",
+    "audit_verdict": "ok"
+  },
+  {
+    "qid": "akzonobelcmd2015tcm9-93597-151027140208-lva1-app6892_95-98",
+    "question": "Decorative Paints accounts for what percentage of the Global paints and coatings market?",
+    "answer": "42",
+    "acceptable_answers": [],
+    "doc_id": "akzonobelcmd2015tcm9-93597-151027140208-lva1-app6892_95",
+    "page": 6,
+    "category": "single-hop",
+    "audit_verdict": "ok"
+  },
+  {
+    "qid": "akzonobelcmd2015tcm9-93597-151027140208-lva1-app6892_95-99",
+    "question": "The business area that will be presented by Ruud Joosten accounts for what percentage of the Global paints and coatings market?",
+    "answer": "42",
+    "acceptable_answers": [],
+    "doc_id": "akzonobelcmd2015tcm9-93597-151027140208-lva1-app6892_95",
+    "page": 1,
+    "category": "single-hop",
+    "audit_verdict": "short_answer"
+  },
+  {
+    "qid": "akzonobelcmd2015tcm9-93597-151027140208-lva1-app6892_95-100",
+    "question": "What is the formula for Return on sales?",
+    "answer": "Operating income/revenue",
+    "acceptable_answers": [],
+    "doc_id": "akzonobelcmd2015tcm9-93597-151027140208-lva1-app6892_95",
+    "page": 9,
+    "category": "single-hop",
+    "audit_verdict": "ok"
+  },
+  {
+    "qid": "akzonobelcmd2015tcm9-93597-151027140208-lva1-app6892_95-101",
+    "question": "From 2012 to 2014, did AkzoNobel's Operating expenses increase or decrease?",
+    "answer": "Decrease",
+    "acceptable_answers": [],
+    "doc_id": "akzonobelcmd2015tcm9-93597-151027140208-lva1-app6892_95",
+    "page": 17,
+    "category": "single-hop",
+    "audit_verdict": "short_answer"
+  },
+  {
+    "qid": "akzonobelcmd2015tcm9-93597-151027140208-lva1-app6892_95-102",
+    "question": "From 2012 to 2014, did the Operating expenses increase or decrease for the company that ranked #1 in Down Jones Sustainability Index in the materials industry group?",
+    "answer": "Decrease",
+    "acceptable_answers": [],
+    "doc_id": "akzonobelcmd2015tcm9-93597-151027140208-lva1-app6892_95",
+    "page": 8,
+    "category": "single-hop",
+    "audit_verdict": "short_answer"
+  },
+  {
+    "qid": "8g7gdo0qpor4joawymkw-signature-8e5009c9c4328c751847b33f09fb482f7d55e2e01e29ccb235452688b5650a46-poli-150630131654-lva1-app6891_95-103",
+    "question": "What is the missing link between operational quality and loyalty?",
+    "answer": "Making it Easy",
+    "acceptable_answers": [],
+    "doc_id": "8g7gdo0qpor4joawymkw-signature-8e5009c9c4328c751847b33f09fb482f7d55e2e01e29ccb235452688b5650a46-poli-150630131654-lva1-a",
+    "page": 2,
+    "page_original": 1,
+    "page_note": "corrected by frozen3 gold audit (answer coverage best page)",
+    "category": "single-hop",
+    "audit_verdict": "page_mismatch"
+  },
+  {
+    "qid": "8g7gdo0qpor4joawymkw-signature-8e5009c9c4328c751847b33f09fb482f7d55e2e01e29ccb235452688b5650a46-poli-150630131654-lva1-app6891_95-104",
+    "question": "What is the formula for the Net Easy Score?",
+    "answer": "% Easy - % Difficult = Net Easy Score",
+    "acceptable_answers": [],
+    "doc_id": "8g7gdo0qpor4joawymkw-signature-8e5009c9c4328c751847b33f09fb482f7d55e2e01e29ccb235452688b5650a46-poli-150630131654-lva1-a",
+    "page": 1,
+    "category": "single-hop",
+    "audit_verdict": "partial"
+  },
+  {
+    "qid": "8g7gdo0qpor4joawymkw-signature-8e5009c9c4328c751847b33f09fb482f7d55e2e01e29ccb235452688b5650a46-poli-150630131654-lva1-app6891_95-105",
+    "question": "What are the six components of Customer Effort?",
+    "answer": "Advisor Attributes, Getting Through to the Right Person, Customer Navigation, Keeping Customer Informed, No. of Times Contacted, Timeliness",
+    "acceptable_answers": [],
+    "doc_id": "8g7gdo0qpor4joawymkw-signature-8e5009c9c4328c751847b33f09fb482f7d55e2e01e29ccb235452688b5650a46-poli-150630131654-lva1-a",
+    "page": 3,
+    "category": "single-hop",
+    "audit_verdict": "ok"
+  },
+  {
+    "qid": "8g7gdo0qpor4joawymkw-signature-8e5009c9c4328c751847b33f09fb482f7d55e2e01e29ccb235452688b5650a46-poli-150630131654-lva1-app6891_95-106",
+    "question": "Which communication channel does the EASY-O-METER indicate is the easiest?",
+    "answer": "Chat",
+    "acceptable_answers": [],
+    "doc_id": "8g7gdo0qpor4joawymkw-signature-8e5009c9c4328c751847b33f09fb482f7d55e2e01e29ccb235452688b5650a46-poli-150630131654-lva1-a",
+    "page": 4,
+    "category": "single-hop",
+    "audit_verdict": "short_answer"
+  },
+  {
+    "qid": "10-design-ideas-simple-exciting-charts-for-business-presentations-140828000137-phpapp01_95-107",
+    "question": "From 2008 to 2012, did the number of Sea Pilot applicants increase or decrease?",
+    "answer": "Decrease",
+    "acceptable_answers": [],
+    "doc_id": "10-design-ideas-simple-exciting-charts-for-business-presentations-140828000137-phpapp01_95",
+    "page": 7,
+    "category": "single-hop",
+    "audit_verdict": "short_answer"
+  },
+  {
+    "qid": "10-design-ideas-simple-exciting-charts-for-business-presentations-140828000137-phpapp01_95-108",
+    "question": "Which is most expensive among iOS, Android, and Windows?",
+    "answer": "iOS",
+    "acceptable_answers": [],
+    "doc_id": "10-design-ideas-simple-exciting-charts-for-business-presentations-140828000137-phpapp01_95",
+    "page": 19,
+    "category": "single-hop",
+    "audit_verdict": "short_answer"
+  },
+  {
+    "qid": "10-design-ideas-simple-exciting-charts-for-business-presentations-140828000137-phpapp01_95-109",
+    "question": "Which was introduced earlier, iOS or Android?",
+    "answer": "iOS",
+    "acceptable_answers": [],
+    "doc_id": "10-design-ideas-simple-exciting-charts-for-business-presentations-140828000137-phpapp01_95",
+    "page": 19,
+    "category": "single-hop",
+    "audit_verdict": "short_answer"
+  },
+  {
+    "qid": "10-design-ideas-simple-exciting-charts-for-business-presentations-140828000137-phpapp01_95-110",
+    "question": "Are Healthy Oats or Oreo the more common choice of Cookies?",
+    "answer": "Oreo",
+    "acceptable_answers": [],
+    "doc_id": "10-design-ideas-simple-exciting-charts-for-business-presentations-140828000137-phpapp01_95",
+    "page": 15,
+    "category": "single-hop",
+    "audit_verdict": "short_answer"
+  },
+  {
+    "qid": "aiims-ibs-advances-140315150647-phpapp01_95-111",
+    "question": "How many patients were in the study by Demanes et al?",
+    "answer": "209",
+    "acceptable_answers": [],
+    "doc_id": "aiims-ibs-advances-140315150647-phpapp01_95",
+    "page": 11,
+    "category": "single-hop",
+    "audit_verdict": "ok"
+  },
+  {
+    "qid": "03172016-pressfinance-lafargeholcimfull-year-results2015analystpresentation-en0-160317065358_95-112",
+    "question": "What do Pro-Forma numbers represent?",
+    "answer": "12 months of operations of the Group",
+    "acceptable_answers": [],
+    "doc_id": "03172016-pressfinance-lafargeholcimfull-year-results2015analystpresentation-en0-160317065358_95",
+    "page": 19,
+    "category": "single-hop",
+    "audit_verdict": "ocr_typo"
+  },
+  {
+    "qid": "a9e1f95c-4506-4f86-bf33-f273c8184d93-150312091151-conversion-gate01_95-113",
+    "question": "What are the five Lean Principles?",
+    "answer": "Specifying Value, Identify and create value streams, Making value flow, Pull production not push, Striving for perfection",
+    "acceptable_answers": [],
+    "doc_id": "a9e1f95c-4506-4f86-bf33-f273c8184d93-150312091151-conversion-gate01_95",
+    "page": 8,
+    "category": "single-hop",
+    "audit_verdict": "ocr_typo"
+  },
+  {
+    "qid": "a9e1f95c-4506-4f86-bf33-f273c8184d93-150312091151-conversion-gate01_95-114",
+    "question": "What are the five Principles of the production system invented by Toyota?",
+    "answer": "Specifying Value, Identify and create value streams, Making value flow, Pull production not push, Striving for perfection",
+    "acceptable_answers": [],
+    "doc_id": "a9e1f95c-4506-4f86-bf33-f273c8184d93-150312091151-conversion-gate01_95",
+    "page": 5,
+    "category": "single-hop",
+    "audit_verdict": "partial"
+  },
+  {
+    "qid": "a9e1f95c-4506-4f86-bf33-f273c8184d93-150312091151-conversion-gate01_95-115",
+    "question": "Are there more Value Added or Non-Value Added components?",
+    "answer": "Non-Value Added",
+    "acceptable_answers": [],
+    "doc_id": "a9e1f95c-4506-4f86-bf33-f273c8184d93-150312091151-conversion-gate01_95",
+    "page": 12,
+    "category": "single-hop",
+    "audit_verdict": "ok"
+  },
+  {
+    "qid": "a9e1f95c-4506-4f86-bf33-f273c8184d93-150312091151-conversion-gate01_95-116",
+    "question": "What are seven Non-Value Added steps?",
+    "answer": "Changeover, Maintenance Downtime, Transportation, Machine Setting, Re Work, Absent, Wait for Tools",
+    "acceptable_answers": [],
+    "doc_id": "a9e1f95c-4506-4f86-bf33-f273c8184d93-150312091151-conversion-gate01_95",
+    "page": 15,
+    "category": "single-hop",
+    "audit_verdict": "ocr_typo"
+  },
+  {
+    "qid": "a9e1f95c-4506-4f86-bf33-f273c8184d93-150312091151-conversion-gate01_95-117",
+    "question": "What are seven steps that are a type of work that needs to be removed or minimized?",
+    "answer": "Changeover, Maintenance Downtime, Transportation, Machine Setting, Re Work, Absent, Wait for Tools",
+    "acceptable_answers": [],
+    "doc_id": "a9e1f95c-4506-4f86-bf33-f273c8184d93-150312091151-conversion-gate01_95",
+    "page": 14,
+    "category": "single-hop",
+    "audit_verdict": "partial"
+  },
+  {
+    "qid": "a9e1f95c-4506-4f86-bf33-f273c8184d93-150312091151-conversion-gate01_95-118",
+    "question": "What follows Takt Time in the flow?",
+    "answer": "Customer/Market",
+    "acceptable_answers": [],
+    "doc_id": "a9e1f95c-4506-4f86-bf33-f273c8184d93-150312091151-conversion-gate01_95",
+    "page": 16,
+    "category": "single-hop",
+    "audit_verdict": "short_answer"
+  },
+  {
+    "qid": "a9e1f95c-4506-4f86-bf33-f273c8184d93-150312091151-conversion-gate01_95-119",
+    "question": "What follows in the flow the amount of time determined by dividing \"your effective operating time per shift\" by \"quantity customer requires per shift\"?",
+    "answer": "Customer/Market",
+    "acceptable_answers": [],
+    "doc_id": "a9e1f95c-4506-4f86-bf33-f273c8184d93-150312091151-conversion-gate01_95",
+    "page": 16,
+    "category": "single-hop",
+    "audit_verdict": "short_answer"
+  }
+]

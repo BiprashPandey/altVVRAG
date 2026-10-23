@@ -1,122 +1,184 @@
-# TODO — Run 9 live validation ("answer, verify, show the source")
+# TODO - what is left after the frozen pilot
 
-Updated: 2026-10-21 10:30
+Updated: 2026-10-23 (frozen3 built; no frozen3 live run yet)
 
-Status: **DONE for model A + hybrid; model B partial (quota)**.
+This is the short, honest plan. Detailed evidence is in `FROZEN_RESULTS.md`,
+`PREREGISTRATION_FROZEN3.md`, `frozen_meta.json`, and `PIPELINE.md`.
 
-## Final state
+## Where we are now
 
-- Run of record: `results/demo/testrun8_20261019_141118/rows.json`
-  - 186 rows = keyword 162 (model A 81/81, model B 28/81) + hybrid 24/24.
-  - 133 completed / 53 resumable errors (all `keyword|gemini-3.8-flash` quota).
-  - Keyword-only backup: `rows_keyword_run9.json`.
-- Report: `testRun9.pdf` (2.2 MB, built from the merged 186-row dir).
-- Gate: previous 18-col artifact retained (`data/gate/tau.json` tau=0.95,
-  n_calib=64, accepted 21 / 0 errors). A runs-5-9 refit was attempted
-  (233 labels); at target 5% no threshold accepted any row (tau=1.0,
-  0 accepted) because several wrong rows scored at the top. Artifacts:
-  `results/gate_refit_run9/`. The gate is not the Run 9 abstention mechanism.
-- Suite: **173 collected, 172 passed, 1 skipped, 0 failed**
-  (`python -m pytest -q`, EXIT=0).
+- `frozen2` pilot: 6 decks / 120 pages / 28 gold / 19 probes; 47 rows, 0 errors.
+  Gemini reader + same-family Gemini examiner; fake embeddings + keyword only.
+- Pilot result: 19/28 gold answers shown, 6/28 verified, verified precision 5/6,
+  15/19 probes nothing-found, 1 false-verified probe.
+- The false-verified probe ("Old Act Section 4 in the New Act Section 12") was
+  independently reproduced with Groq. The post-hoc `Section N` constraint makes
+  it `not_confident`; it changes 0/28 pilot gold rows.
+- `frozen3` is built and frozen **before any live run**:
+  - 25 decks / 500 pages / 120 gold / 60 probes.
+  - 67 ok, 35 short-answer, 7 OCR-typo, 9 partial, 2 image-only, 0 page
+    mismatch after 7 pre-run page corrections.
+  - Probe categories: near-miss 15, absent-attribute 13, entity-swap 22,
+    false-bridge 10; all check strings verified absent from local OCR.
+  - Local `data/index_frozen3_local` is **fake embeddings** and is only for
+    audit/probe checks. The real ColQwen index and query cache do not exist
+    yet. Local keyword baseline: page_hit@1 33.3%, @5 63.3%, MRR 0.461
+    (`results/frozen3_local_keyword_validation.json`).
+- Text-only independent examiner mode is implemented (`verify.examiner_evidence:
+  text`, Groq model rotation; no images); one test covers it.
+- `run_test8.py` supports full-set hybrid (`--hybrid-all`), custom
+  `--query-cache`, `--n3 0`, and partial-credit reporting. `partial_answer_correct`
+  is report-only; strict scoring is unchanged.
+- `make_frozen_report.py` is generic (`--set-dir`, `frozen_meta.json`) and the
+  full 180-row mock report runs with 0 errors; a full hybrid-arm mock (180
+  rows, missing cache -> keyword fallback) also completes with 0 errors.
+- Full pytest passes; the earlier live-run bug (`per_line_iou` missing import)
+  was found by the frozen3 mock run and fixed.
 
-## Results (completed rows)
+## What is left, in priority order
 
-| cell | rows | shown | strict | false abst | ph@1 | MRR | answered | verified n | verified prec | examinable | probes flagged | false verified |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| keyword / gemini-3.5-flash-lite | 81/81 | 0.650 | 0.050 | 0.200 | 0.700 | 0.858 | 32 | 3 | 0.667 | 21/40 | 1.000 (41/41) | 0.000 |
-| keyword / gemini-3.8-flash (partial) | 28/81 | 0.393 | 0.071 | 0.571 | 0.643 | 0.873 | 12 | 3 | 0.667 | 11/28 | n/a | n/a |
-| hybrid / gemini-3.5-flash-lite | 24/24 | 0.583 | 0.083 | 0.250 | 0.667 | 0.774 | 18 | 3 | 0.667 | 17/24 | n/a | n/a |
-| aggregate | 133/186 | — | — | — | — | — | — | 9 | 0.667 (CP95 [0.299, 0.925]) | 49/92 | 1.000 (41/41) | 0.000 |
+### 1. Build the real index and query cache on Colab
 
-- States: 9 verified / 65 not_confident / 59 nothing_found (completed rows).
-- Probe categories (keyword A): absent-attribute 11/11, entity-swap 13/13,
-  false-bridge 9/9, near-miss 8/8 flagged; **false_verified_on_probes = 0**.
-- Hybrid on the same 24 items: page_hit@1 **16/24 vs 13/24** keyword,
-  shown **14 vs 11**, strict 2 vs 2, MRR (found-only) 0.774 vs 0.801.
-- Category (keyword A, shown/strict): single-hop 0.933/0.067 (n=15),
-  multi-hop 0.400/0.200 (n=5), image-only 0.500/0.000 (n=20).
+**Why:** frozen3 has only fake page vectors locally. A real visual-retrieval
+claim requires ColQwen page vectors and query vectors.
 
-## Findings (keep these)
+**What:** Run `notebooks/frozen3_colab.ipynb` on a T4 GPU. **No upload:** the
+notebook clones `main` (code + frozen JSON set), checks the frozen hashes,
+materializes the exact 25 decks, builds `data/index_frozen3`, encodes all 180
+questions into `data/query_cache_frozen3`, validates probe absence, and
+downloads `frozen3_gpu_bundle.zip`.
 
-1. **Verified-but-wrong = 3 rows, all the same question**: the Alcatel slogan
-   item (`..._95-17`) reached VERIFIED in keyword A, keyword B and hybrid A
-   with answer "ALCATEL-LUCENT OVERVIEW 2012" vs gold "AT THE SPEED OF IDEAS".
-   The examiner confirmed the on-page slide title as answering the question.
-   This is examiner leniency (report section 4c), not a quote failure.
-2. **Examiner availability 49/92 gold rows**; 43 were not_confident because
-   the examiner could not run (Groq TPD, plus 404 fallback models), not
-   because verification failed. Examiner-only denominators exclude them;
-   the report prints the unavailable count per cell.
-3. **Quote-seen false negatives**: e.g. "12.5 bn" vs the examiner's fuller
-   "Trading Operating Profit 12.5 bn" gives match 0.57 < 0.60 and
-   not_confident on a correct answer. Conservative (answer shown, not
-   verified), not a false verified answer.
-4. **Table/cell citation units** remain heuristic; a quoted answer spanning a
-   cell boundary can still fail quote/support checks.
-5. **Model B quota** was still exhausted on 2026-10-21; each blocked row burns
-   ~5 min of retries. The 53 remaining rows are resumable, not failures.
+**Done when:** The bundle is extracted, `validate_retrieval.py` reports keyword
+and hybrid page-hit/MRR, and the notebook assertions pass (25 decks, 500 pages,
+60 probes absent, 180/180 query vectors).
 
-## Done this session
+### 2. Run frozen3 once with the independent text examiner
 
-- Harness hardening:
-  - `src/vvrag/eval/harness.py` (`validate_index_arg`, `select_resume_rows`).
-  - `scripts/run_test8.py`: `--index` directory guard, resume-model filter,
-    `--summarize DIR`, examiner-only Run 9 stats.
-  - `src/vvrag/eval/metrics.py`: `verified_stats(..., examiner_only=...)`
-    with `n_gold_examinable`, `n_examiner_unavailable`,
-    `verified_precision_cp95`; coverage/source accuracy now use all gold rows
-    (not only examiner-ran rows).
-  - `tests/test_harness.py`; examiner-only metric test; full suite green.
-- Live run:
-  - Model A resumed to 81/81 with the corrected guard/resume path.
-  - Hybrid arm completed 24/24 with `mode_used=hybrid` and cached query
-    vectors; merged into the run of record (hybrid `idx` renumbered).
-- Report (`scripts/make_test8_pdf.py`):
-  - Run 9 detection/title/default `testRun9.pdf`; run-status/incomplete-cell
-    warning; Run 9 feature list; section 4b examiner-only metrics with
-    denominators; section 4c verified-but-wrong audit; section 4d
-    PASS/FAIL verdict; gate refit note; hybrid section; honest notes.
-- Gate refit attempt (runs 5-9, 233 labels) and retention of the previous
-  18-col gate; refit artifacts kept for audit.
-- Full pytest after the run: 173 collected, 172 passed, 1 skipped.
+**Why:** This is the first fresh-set result after the post-hoc fixes, and the
+first full independent-examiner result if Groq quota permits.
 
-## Next (optional)
+**What:** Run keyword 180 rows, then hybrid 180 rows, with frozen
+`config.frozen3.text.yaml`, Gemini reader, and Groq text examiner rotation
+(`gpt-oss-20b` -> `gpt-oss-120b` -> `qwen3.8-27b`). Use `--n3 0`; do not tune
+between arms. Resume errors; do not replace rows.
 
-1. Resume model B when quota resets:
-   `python scripts/run_test8.py --resume results/demo/testrun8_20261019_141118 --resume-models gemini-3.8-flash`
-   then rebuild the report and `--summarize`.
-2. Improve examiner robustness: remove the 404 fallback models from
-   `verify.examiner_models` and aggregate per-model errors instead of keeping
-   only the last one; refit tau when enough live labels exist.
-3. Add a question-constraint check for semantic near-misses (the Alcatel
-   slogan class); the current examiner is too lenient on on-page but
-   non-answering text.
-4. Optional: multi-page reader context for the multi-hop Nestlé items.
+**Done when:** Both runs have 0 errors, the examiner availability and per-model
+errors are recorded, and `frozen_eval_frozen3.pdf` is built from the run dirs.
+
+### 3. Report honestly at 120 gold, not 200-300
+
+**Why:** 120 gold / 60 probes is useful but still fixed-set evidence with wide
+intervals. The approved 12-deck/180-page target was not achievable from the
+mirror; the set is 25 decks/500 pages.
+
+**What:** Report coverage, EM, containment, F1, verified precision,
+confident-wrong, probe answered/nothing-found/false-verified, page-hit/MRR,
+partial-credit metrics, and CP95 intervals. State the size limitation and the
+train-split/subset construction.
+
+**Done when:** The report contains exact counts, intervals, retrieval mode used,
+reader/examiner model names, unavailability, and all deviations.
+
+### 4. Grow to 200-300 gold + 100+ probes only as a new set
+
+**Why:** Do not extend frozen3 after seeing its results; that would make it a
+tuning set.
+
+**What:** Build `frozen4` from new decks with the same pre-run audit/probe
+protocol, freeze hashes, and run once. Keep frozen3 as the prior fixed result.
+
+**Done when:** A larger deck-disjoint set is frozen and run once, with the same
+report contract.
+
+### 5. Fix multi-hop and table citation units
+
+**Why:** Multi-hop remains the dominant honest-abstention class; table cells can
+split the answer from its qualifier. Adding pages alone previously regressed an
+answer.
+
+**What:** Add table-aware/structured citation units and a qualifier-aware check;
+evaluate on a **new** frozen set, not frozen3.
+
+**Done when:** Multi-hop/table results improve on a fresh set without increasing
+false-verified probes.
+
+### 6. Keep partial-answer scoring explicit
+
+**Why:** One pilot verified answer was a correct fragment of a longer gold
+answer. Strict matching called it wrong.
+
+**What:** Keep strict EM/F1 as primary; report partial-credit separately (already
+implemented). Do not silently add acceptable answers after seeing results.
+
+**Done when:** Every report shows strict and partial counts side by side and
+states the gold rule.
+
+### 7. Prove the visual-claim path separately
+
+**Why:** The text-only examiner cannot verify chart/image-only claims. frozen3
+has only 2 image-only gold items, so it cannot establish visual-tier gains.
+
+**What:** After the text-only full run, run a targeted image-examiner subset on
+image-only/chart rows if Groq quota permits. Keep `visual_verified` separate
+from `verified`.
+
+**Done when:** The report gives visual-verified counts/precision and examples,
+or explicitly says the visual tier was not evaluated.
+
+### 8. Clean up and commit when asked
+
+**Why:** The working tree still has old logs, PDFs, zips, and uncommitted code.
+
+**What:** Remove accidental files, record code/config/data hashes, keep pilot
+pre-fix numbers separate from post-fix checks, and commit only when the user
+asks. Never commit credentials, data, results, PDFs, or zips.
+
+**Done when:** A new machine can reproduce frozen3 from the documented
+commands/hashes.
+
+## Rules
+
+- Do **not** reuse `frozen2` or `frozen3` to show improvement after a fix.
+- Do **not** change labels, probes, thresholds, or prompts between arms.
+- Do **not** call a same-family examiner "independent".
+- Do **not** present 120 + 60 as a final universal estimate.
+- Do **not** mix text-verified and visual-verified numbers.
+- If quota removes rows, report the holes; do not silently drop them.
 
 ## Commands
 
 ```bash
-# rebuild the report from the merged run
-python scripts/make_test8_pdf.py results/demo/testrun8_20261019_141118 testRun9.pdf
-
-# regenerate summary.json
-python scripts/run_test8.py --summarize results/demo/testrun8_20261019_141118
-
-# resume model B next quota day
-python scripts/run_test8.py --resume results/demo/testrun8_20261019_141118 --resume-models gemini-3.8-flash
-
-# full suite (no live run active)
+# full test suite (do not run during a live run)
 python -m pytest -q
+
+# frozen3 mock plumbing (local fake index; no API)
+VVRAG_CONFIG=config.frozen3.text.yaml python scripts/run_test8.py \
+  --mock --index data/index_frozen3_local \
+  --gold data/slidevqa_frozen3/gold.json \
+  --probes data/slidevqa_frozen3/probes.json \
+  --arms keyword --models gemini-3.5-flash-lite --n3 0
+
+# rebuild the frozen report from a real run
+VVRAG_CONFIG=config.frozen3.text.yaml python scripts/make_frozen_report.py \
+  <run_dir> frozen_eval_frozen3.pdf \
+  --set-dir data/slidevqa_frozen3 --config config.frozen3.text.yaml
+
+# live after Colab bundle extraction
+VVRAG_CONFIG=config.frozen3.text.yaml python scripts/run_test8.py \
+  --index data/index_frozen3 \
+  --gold data/slidevqa_frozen3/gold.json \
+  --probes data/slidevqa_frozen3/probes.json \
+  --arms keyword --models gemini-3.5-flash-lite --n3 0
+VVRAG_CONFIG=config.frozen3.text.yaml python scripts/run_test8.py \
+  --index data/index_frozen3 \
+  --gold data/slidevqa_frozen3/gold.json \
+  --probes data/slidevqa_frozen3/probes.json \
+  --arms hybrid --hybrid-all --models gemini-3.5-flash-lite \
+  --query-cache data/query_cache_frozen3 --n3 0
 ```
 
-## Honesty notes
+## One-sentence summary
 
-- `verified` requires an examiner that actually ran; examiner-unavailable rows
-  are `not_confident` and must not be counted as verification failures.
-- The 53 model-B rows are `PENDING`/quota errors; the cell is incomplete and
-  must not be read as 0 performance.
-- Gate artifacts are 18-col feature-order version-bound; do not mix with
-  9/12/15-col artifacts. The refit at 5% was infeasible; the retained gate is
-  the pre-Run-9 18-col artifact.
-- Small n: 9 verified rows and 49 examiner-ran gold rows give wide CP
-  intervals; treat the rates as directional.
+frozen3 is built and frozen (25 decks, 120 gold, 60 verified-absent probes);
+the next real result is the Colab-built visual index plus one independent
+keyword/hybrid run, reported at its true size.

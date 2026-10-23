@@ -18,6 +18,7 @@ pixels and as page fractions (0-1) for a zoom-stable viewer (#9).
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import time
 from pathlib import Path
@@ -33,7 +34,10 @@ from vvrag.ingest.embed import load_embedding
 from vvrag.ingest.sentences import box_frac, sentences_from_page
 from vvrag.logging_utils import get_logger
 from vvrag.reader.claims import normalize_answer, validate_sentence_ids
-from vvrag.schemas import WordBox
+from vvrag.schemas import GroundedRegion, WordBox
+from vvrag.verify.citation import citation_overlap, page_number_sink
+from vvrag.verify.claim_verifier import (claim_confidence, claim_is_supported,
+                                       normalize_claim_label)
 from vvrag.verify.examiner import (examiner_confirmed, parse_examiner_output,
                                    verdict_supported_value)
 from vvrag.verify.question_details import (check_question_details,
@@ -325,11 +329,27 @@ def answer_question(question: str, index_dir: str, work_dir: str,
     from vvrag.config import AppConfig, load_config
 
     try:
-        cfg: AppConfig = load_config("config.yaml")
+        import os as _os
+        cfg: AppConfig = load_config(_os.environ.get("VVRAG_CONFIG", "config.yaml"))
     except Exception as e:  # noqa: BLE001 - config is optional for mock mode
         log.warning("config load failed, using defaults: %s", e)
         cfg = AppConfig()
     quote_threshold = float(getattr(cfg.verify, "quote_threshold", 0.8))
+    index_manifest = {}
+    index_manifest_mismatches: list[str] = []
+    try:
+        from vvrag.ingest.index import get_manifest, manifest_mismatches
+
+        index_manifest = get_manifest(con)
+        if index_manifest:
+            index_manifest_mismatches = manifest_mismatches(con, {
+                "embedding_model": cfg.retriever.model_id,
+                "dpi": cfg.render.dpi,
+                "collection_full": cfg.qdrant.collection_full,
+                "collection_pooled": cfg.qdrant.collection_pooled,
+            })
+    except Exception as e:  # noqa: BLE001 - legacy index without manifest
+        log.warning("index manifest unavailable: %s", e)
 
     # ---------------- retrieval (Phase 1: keyword | visual | hybrid) ------
     cfg_ret = getattr(cfg, "retriever", None)
@@ -348,7 +368,10 @@ def answer_question(question: str, index_dir: str, work_dir: str,
     if mode in ("visual", "hybrid"):
         from vvrag.retrieve.query_vectors import QueryVectorStore
 
-        store = QueryVectorStore(getattr(cfg_ret, "query_vectors_dir", "data/query_cache"))
+        qvec_dir = (os.environ.get("VVRAG_QUERY_VECTORS_DIR")
+                    or getattr(cfg_ret, "query_vectors_dir",
+                               "data/query_cache"))
+        store = QueryVectorStore(qvec_dir)
         hit = store.get(question)
         if hit is None and bool(getattr(cfg_ret, "online_encoder", True)):
             # Phase 4: encode the question on the fly (laptop GPU) and cache
@@ -393,19 +416,37 @@ def answer_question(question: str, index_dir: str, work_dir: str,
                                                    rrf_fuse,
                                                    visual_page_scores)
 
-                page_list = [(d, p) for d, p, _s, _w in kw_full]
-                vis_scores = visual_page_scores(index_dir, page_list, qvecs)
+                kw_pages = [(d, p) for d, p, _s, _w in kw_full]
+                if str(getattr(cfg_ret, "visual_scope", "all")).lower() == "all":
+                    # Report parity: visual retrieval must be able to find a
+                    # page that keyword retrieval ranked poorly. Score every
+                    # embedded page; word boxes are loaded only for pages that
+                    # survive fusion.
+                    all_pages = [(str(d), int(p)) for d, p in con.execute(
+                        "SELECT doc_id, page FROM pages ORDER BY doc_id, page")]
+                    visual_pages = all_pages or kw_pages
+                else:
+                    visual_pages = kw_pages
+                vis_scores = visual_page_scores(index_dir, visual_pages, qvecs)
+                if not vis_scores:
+                    raise RuntimeError(
+                        "no page embeddings for visual scoring")
                 vis_order = rank_order(vis_scores)
                 if mode == "visual":
                     order = vis_order
                     rank_scores = vis_scores
                 else:
-                    fused = rrf_fuse([page_list, vis_order],
+                    fused = rrf_fuse([kw_pages, vis_order],
                                      k=int(getattr(cfg_ret, "rrf_k", 60)))
                     order = [(d, p) for d, p, _s in fused]
                     rank_scores = {(d, p): s for d, p, s in fused}
-                ranked = [(d, p, rank_scores[(d, p)], words_map[(d, p)])
-                          for d, p in order if (d, p) in words_map][:5]
+                top = []
+                for d, p in order[:max(5, int(getattr(cfg_ret, "rerank_top_k", 5)))]:
+                    key = (d, p)
+                    if key not in words_map:
+                        words_map[key] = page_words(con, d, p)
+                    top.append((d, p, rank_scores[key], words_map[key]))
+                ranked = top[:5]
                 mode_used = mode
             except Exception as e:  # noqa: BLE001 - honest keyword fallback
                 mode_used = "keyword"
@@ -640,6 +681,27 @@ def answer_question(question: str, index_dir: str, work_dir: str,
                 unresolved.append([r[0], r[1]])
                 continue
             resolved.append((key[0], key[1], sid))
+        derived_from_quote = False
+        # P3: a reader may return a verbatim table-cell quote but omit
+        # sentence_ids. If exactly one shown sentence contains that quote
+        # (normalized, length >= 2 tokens), resolve it deterministically and
+        # record that it was derived. Never rebind a non-empty unresolved id.
+        if not refs and sample.quote and len(
+                normalize_answer(sample.quote).split()) >= 2:
+            candidates = []
+            for key in ctx_keys:
+                st = _get_state(key)
+                for sent in (st["sentences"] if st else []):
+                    score = quote_match_score(sample.quote, [sent.text],
+                                              ocr_normalize=ocr_norm)
+                    if score >= 0.95:
+                        candidates.append((key, sent, score))
+            uniq = {(k[0], k[1], sent.sent_id): (k, sent)
+                    for k, sent, _score in candidates}
+            if len(uniq) == 1:
+                (key, sent) = next(iter(uniq.values()))
+                resolved = [(key[0], key[1], sent.sent_id)]
+                derived_from_quote = True
         texts: list[str] = []
         for d, p, sid in resolved:
             st = _get_state((d, p))
@@ -649,7 +711,9 @@ def answer_question(question: str, index_dir: str, work_dir: str,
                 texts.append(s.text)
         qs = (quote_match_score(sample.quote, texts, ocr_normalize=ocr_norm)
               if texts else 0.0)
-        if not refs:
+        if resolved and not refs:
+            status = "ok"
+        elif not refs:
             status = "none"
         elif not resolved:
             status = "unresolved"
@@ -659,7 +723,8 @@ def answer_question(question: str, index_dir: str, work_dir: str,
             status = "ok"
         resolution = {"status": status, "n_refs": len(refs),
                       "n_resolved": len(resolved),
-                      "unresolved": unresolved[:5]}
+                      "unresolved": unresolved[:5],
+                      "derived_from_quote": derived_from_quote}
         valid = bool(resolved and texts)
         return a, una, resolved, texts, valid, qs, resolution
 
@@ -800,6 +865,57 @@ def answer_question(question: str, index_dir: str, work_dir: str,
             question, answer, cited_texts, stmt_entail, support_threshold,
             type_check=type_check, comparison_check=comparison_check)
 
+    # Phase C: deterministic document candidates per claim (not trusted yet;
+    # the examiner must judge the candidate). Multi-page when the reader cited
+    # or the context includes another page.
+    claim_regions: list[dict] = []
+    if not is_unanswerable and str(answer).strip():
+        from vvrag.ground.candidates import candidates_for_claim
+
+        for claim in (samples[0].claims or [])[:5]:
+            claim_text = str(getattr(claim, "text", "") or "").strip()
+            if not claim_text:
+                continue
+            cands = []
+            for ckey in ctx_keys:
+                cst = _get_state(ckey)
+                if not cst:
+                    continue
+                try:
+                    cands.extend(candidates_for_claim(
+                        claim_text, cst["sentences"], ckey[0], ckey[1],
+                        cst["W"], cst["H"],
+                        reader_region=(samples[0].region
+                                       if ckey == primary_key else None),
+                        words=cst["words"],
+                        min_shared=int(getattr(cfg.verify,
+                                               "citation_min_terms", 1)),
+                        top_k=5, focus=str(answer)))
+                except Exception as e:  # noqa: BLE001 - grounding is best-effort
+                    log.debug("claim candidates failed for %s: %s", ckey, e)
+            # cross-page dedupe + deterministic top-5
+            seen = set()
+            uniq = []
+            for c in sorted(cands, key=lambda x: -x.score):
+                key = (c.region.doc_id, c.region.page, c.region.box,
+                       c.region.text)
+                if key in seen:
+                    continue
+                seen.add(key)
+                uniq.append(c)
+            def _cand_dict(c):
+                d = c.region.to_dict()
+                d["rank_score"] = round(float(c.score), 4)
+                d["matched_terms"] = list(c.matched_terms)
+                return d
+
+            claim_regions.append({
+                "text": claim_text,
+                "candidates": [_cand_dict(c) for c in uniq[:5]],
+                "best": uniq[0].region.to_dict() if uniq else None,
+                "best_score": round(float(uniq[0].score), 4) if uniq else 0.0,
+            })
+
     # ---------------- Run 9 (guideline s4.3/s7): the examiner -------------
     # The examiner is shown the claim on EVERY answer (not just failed ones),
     # finds the quote itself and judges fit. A failed or unavailable examiner
@@ -814,25 +930,84 @@ def answer_question(question: str, index_dir: str, work_dir: str,
     examiner: dict = {"ran": False, "served_by": "", "error": "",
                       "quote_found": False, "quote_seen": "",
                       "answer_supported": "", "answers_the_question": None,
+                      "citation_specific": None, "region_supports": None,
                       "problem": "", "quote_seen_match": 0.0,
-                      "confirmed": False, "reason": "not attempted"}
+                      "confirmed": False, "reason": "not attempted",
+                      "attempts": [], "errors": {}, "evidence_mode": "",
+                      "citation_precheck": {}}
     independence_ok = True
+    independence_required = bool(getattr(cfg.verify, "independence_required", True))
 
-    def _check_img() -> str:
-        """Region crop (padded) when the reader gave one, else the page image."""
-        check = img_path
+    # Evidence text for the examiner quote cross-check and the details check.
+    # The cited sentence alone is too narrow: years and company names often sit
+    # in the page header or deck title.
+    evidence_keys = [primary_key] + [(d, p) for d, p, _s in cited_refs]
+    rpage = (samples[0].region or {}).get("page")
+    if rpage is not None:
+        rkey = next((k for k in ctx_keys if k[1] == int(rpage)), None)
+        if rkey is not None:
+            evidence_keys.append(rkey)
+    page_texts: list[str] = []
+    for key in dict.fromkeys(evidence_keys):
+        st = _get_state(key)
+        if st is not None:
+            page_texts.append(" ".join(w.text for w in st["words"]))
+    deck_texts: list[str] = []
+    try:
+        first_page_words = page_words(con, doc_id, 0)
+        if first_page_words:
+            deck_texts.append(" ".join(w.text for w in first_page_words))
+    except Exception:  # noqa: BLE001 - deck title is best-effort
+        pass
+    region_texts = [crop_text] if has_text and crop_text else []
+
+    def _check_img() -> tuple[str, str]:
+        """Evidence crop for the examiner; never the full page if a usable crop exists."""
+        from PIL import Image as _PILImage
+
+        def _usable(path) -> bool:
+            try:
+                with _PILImage.open(path) as im:
+                    return im.size[0] >= 32 and im.size[1] >= 32
+            except Exception:  # noqa: BLE001 - unreadable/absent crop
+                return False
+
+        # Phase C: prefer the deterministic document candidate for the first
+        # claim over the reader's loose answer crop. The verifier must judge
+        # the cited candidate region, not just the page.
+        best = None
+        if claim_regions:
+            best = claim_regions[0].get("best")
+        if best and best.get("box_frac"):
+            try:
+                bkey = (best["doc_id"], int(best["page"]))
+                bst = _get_state(bkey)
+                if bst is not None:
+                    bf = best["box_frac"]
+                    bp = _PILImage.open(bst["img_path"])
+                    bw, bh = bp.size
+                    pad = 0.02
+                    box = (int(max(0.0, bf[0] - pad) * bw),
+                           int(max(0.0, bf[1] - pad) * bh),
+                           int(min(1.0, bf[2] + pad) * bw),
+                           int(min(1.0, bf[3] + pad) * bh))
+                    if box[2] > box[0] and box[3] > box[1]:
+                        cp = Path(str(crop_path)).with_name(
+                            Path(str(crop_path)).stem + "_claimcheck.png")
+                        bp.crop(box).save(cp)
+                        if _usable(cp):
+                            return str(cp), "claim_candidate"
+            except Exception:  # noqa: BLE001 - fall back to reader crop
+                pass
         f = (samples[0].region or {}).get("box_frac")
         if f:
             rkey = primary_key
-            rpage = (samples[0].region or {}).get("page")
             if rpage is not None:
                 rkey = next((k for k in ctx_keys if k[1] == int(rpage)),
                             primary_key)
             st = _get_state(rkey)
             if st is not None:
                 try:
-                    from PIL import Image as _PILImage
-
                     im = _PILImage.open(st["img_path"])
                     w, h = im.size
                     pad = 0.04
@@ -844,29 +1019,190 @@ def answer_question(question: str, index_dir: str, work_dir: str,
                         cp = Path(str(crop_path)).with_name(
                             Path(str(crop_path)).stem + "_vcheck.png")
                         im.crop(box).save(cp)
-                        check = str(cp)
-                except Exception:  # noqa: BLE001 - fall back to full page
-                    check = img_path
-        return check
+                        if _usable(cp):
+                            return str(cp), "region_crop"
+                except Exception:  # noqa: BLE001 - fall back to answer crop
+                    pass
+        if crop_path and Path(str(crop_path)).exists() and _usable(crop_path):
+            return str(crop_path), "answer_crop"
+        # A tiny answer crop (often a narrow title) is rejected by Groq
+        # (<32 px). Fall back to the cited sentence's box before the page.
+        try:
+            for d, p, sid in cited_refs:
+                st = _get_state((d, p))
+                sent = next((x for x in (st["sentences"] if st else [])
+                             if x.sent_id == sid), None)
+                if sent is None:
+                    continue
+                im = _PILImage.open(st["img_path"])
+                w, h = im.size
+                x0, y0, x1, y1 = sent.box
+                pad = max(8, int(0.02 * min(w, h)))
+                box = (max(0, x0 - pad), max(0, y0 - pad),
+                       min(w, x1 + pad), min(h, y1 + pad))
+                if box[2] - box[0] < 32 or box[3] - box[1] < 32:
+                    continue
+                cp = Path(str(crop_path)).with_name(
+                    Path(str(crop_path)).stem + "_sentcheck.png")
+                im.crop(box).save(cp)
+                if _usable(cp):
+                    return str(cp), "sentence_crop"
+        except Exception:  # noqa: BLE001 - best effort
+            pass
+        return img_path, "page"
+
+    def _crop_claim_region(region: dict | None, suffix: str) -> str | None:
+        """Crop one deterministic claim candidate; None when unusable."""
+        if not region or not region.get("box_frac"):
+            return None
+        try:
+            from PIL import Image as _PILImage
+
+            bkey = (region["doc_id"], int(region["page"]))
+            bst = _get_state(bkey)
+            if bst is None:
+                return None
+            im = _PILImage.open(bst["img_path"])
+            w, h = im.size
+            bf = region["box_frac"]
+            pad = 0.02
+            box = (int(max(0.0, bf[0] - pad) * w),
+                   int(max(0.0, bf[1] - pad) * h),
+                   int(min(1.0, bf[2] + pad) * w),
+                   int(min(1.0, bf[3] + pad) * h))
+            if box[2] - box[0] < 32 or box[3] - box[1] < 32:
+                return None
+            cp = Path(str(crop_path)).with_name(
+                Path(str(crop_path)).stem + suffix)
+            im.crop(box).save(cp)
+            return str(cp)
+        except Exception:  # noqa: BLE001 - candidate crop is best-effort
+            return None
+
+    # Deterministic citation-specific precheck (report-gap fix). A cited
+    # region that shares no content term with the claim cannot be the
+    # specific evidence, even if the claim is true elsewhere on the page.
+    # For a visual region with no OCR text the independent verifier decides.
+    citation_claim_text = " ".join(
+        [str(answer)] + [c.text for c in samples[0].claims if c.text])
+    citation_evidence = (cited_texts if cited_texts else
+                         ([crop_text] if crop_text else []))
+    if is_unanswerable or not str(answer).strip() or not citation_evidence:
+        citation_ok, citation_score, citation_terms = None, 0.0, []
+    else:
+        citation_ok, citation_score, citation_terms = citation_overlap(
+            citation_claim_text, citation_evidence,
+            min_shared=int(getattr(cfg.verify, "citation_min_terms", 1)))
+    numeric_sink = page_number_sink(citation_claim_text, citation_evidence)
+    if numeric_sink:
+        citation_ok = False
 
     verdict: dict | None = None
+    claim_level_on = bool(getattr(cfg.verify, "claim_level", True))
+    claim_max = max(0, int(getattr(cfg.verify, "claim_level_max", 5)))
+    claim_image_max = max(0, int(getattr(cfg.verify, "claim_level_images", 2)))
+    claim_prompt_texts: list[str] = []
+    claim_prompt_evidence: list[str] = []
+    claim_crops: list[str] = []
+    claim_level_indices: list[int] = []
+    claim_level_ok = True
     if not is_unanswerable and ex_on and str(answer).strip():
-        from vvrag.reader.prompts import build_examiner_prompt
+        from vvrag.reader.prompts import (build_examiner_prompt,
+                                         build_text_examiner_prompt)
 
-        ex_prompt = build_examiner_prompt(question, answer,
-                                          samples[0].quote or "",
-                                          samples[0].found_in or "")
-        ex_imgs = [_check_img()]
-        if (crop_path and str(crop_path) != ex_imgs[0]
-                and Path(str(crop_path)).exists()
-                and str(crop_path) not in ex_imgs):
-            ex_imgs.append(str(crop_path))
+        exam_evidence = str(getattr(cfg.verify, "examiner_evidence",
+                                   "region")).lower()
+        text_examiner = exam_evidence in ("text", "text_only", "text-only")
+        if text_examiner:
+            # Text-only independent examiner: no image tokens, no crops. The
+            # deterministic citation precheck remains a hard gate for VERIFIED.
+            check_img, evidence_mode = "", "text"
+            examiner["evidence_mode"] = "text"
+            ex_imgs = []
+            claim_image_max = 0
+            if claim_level_on:
+                for i, cr in enumerate(claim_regions[:claim_max]):
+                    text = str(cr.get("text") or "").strip()
+                    if not text:
+                        continue
+                    best = cr.get("best") or {}
+                    claim_level_indices.append(i)
+                    claim_prompt_texts.append(text)
+                    claim_prompt_evidence.append(str(best.get("text") or ""))
+        else:
+            check_img, evidence_mode = _check_img()
+            if claim_level_on:
+                for i, cr in enumerate(claim_regions[:claim_max]):
+                    text = str(cr.get("text") or "").strip()
+                    if not text:
+                        continue
+                    best = cr.get("best") or {}
+                    claim_level_indices.append(i)
+                    claim_prompt_texts.append(text)
+                    claim_prompt_evidence.append(str(best.get("text") or ""))
+                    if len(claim_crops) < claim_image_max:
+                        if i == 0 and str(check_img) != str(img_path):
+                            crop = str(check_img)
+                        else:
+                            crop = _crop_claim_region(best, f"_claim{i}.png")
+                        claim_crops.append(crop or img_path)
+            if exam_evidence == "page":
+                check_img, evidence_mode = img_path, "page"
+                ex_imgs = [check_img]
+                claim_crops = []
+            elif exam_evidence in ("page_and_region", "page+region", "both",
+                                   "page_region"):
+                # Full page for context + one highlighted candidate per claim.
+                region_imgs = claim_crops or (
+                    [check_img] if str(check_img) != str(img_path) else [])
+                ex_imgs = [img_path] + region_imgs
+                examiner["evidence_mode"] = ("page_and_region"
+                                             if len(ex_imgs) > 1 else "page")
+            else:
+                ex_imgs = claim_crops or [check_img]
+            examiner["evidence_mode"] = (examiner.get("evidence_mode")
+                                         or evidence_mode)
+        if text_examiner:
+            ex_prompt = build_text_examiner_prompt(
+                question, answer, samples[0].quote or "",
+                samples[0].found_in or "",
+                cited_texts=cited_texts,
+                page_texts=page_texts,
+                claims=claim_prompt_texts or None,
+                claim_evidence=claim_prompt_evidence)
+        else:
+            ex_prompt = build_examiner_prompt(
+                question, answer, samples[0].quote or "",
+                samples[0].found_in or "",
+                claims=claim_prompt_texts or None,
+                claim_evidence=claim_prompt_evidence,
+                n_claim_images=len(claim_crops))
         if reader_mode == "mock":
             from vvrag.verify.examiner import MockExaminer
 
             raw = MockExaminer().examine(question, answer,
                                          samples[0].quote or "", cited_texts)
             verdict = parse_examiner_output(raw)
+            if claim_level_on and claim_prompt_texts:
+                mock_claims = []
+                for pos, ci in enumerate(claim_level_indices):
+                    ctext = claim_prompt_texts[pos]
+                    craw = MockExaminer().examine(question, ctext, "",
+                                                  cited_texts)
+                    cv = parse_examiner_output(craw)
+                    label = normalize_claim_label(
+                        "", cv.get("answer_supported", ""),
+                        cv.get("citation_specific"),
+                        cv.get("region_supports"))
+                    mock_claims.append({
+                        "index": ci, "label": label,
+                        "citation_specific": cv.get("citation_specific"),
+                        "region_supports": cv.get("region_supports"),
+                        "quote_found": cv.get("quote_found"),
+                        "quote_seen": cv.get("quote_seen", ""),
+                        "problem": cv.get("problem", ""),
+                    })
+                verdict["claims"] = mock_claims
             examiner.update(ran=True, served_by="mock/examiner", mock=True)
         else:
             from vvrag.cache import DiskCache as _DiskCache
@@ -878,10 +1214,11 @@ def answer_question(question: str, index_dir: str, work_dir: str,
                              or [getattr(cfg.verify, "cross_family_model", "")])
             independence_ok = (provider_ex.lower()
                                != str(provider or "").lower())
-            err = ""
             for m_ex in models_ex:
                 if not m_ex:
                     continue
+                attempt = {"provider": provider_ex, "model": m_ex,
+                           "ok": False, "error": ""}
                 try:
                     cl = _create_reader(
                         provider_ex, m_ex, _DiskCache(cfg.cache_dir),
@@ -894,25 +1231,138 @@ def answer_question(question: str, index_dir: str, work_dir: str,
                         1)[0]
                     api_calls += 1
                     verdict = parse_examiner_output(raw)
+                    attempt["ok"] = True
+                    examiner["attempts"].append(attempt)
                     examiner.update(ran=True,
                                     served_by=f"{provider_ex}/{m_ex}")
                     break
                 except Exception as e:  # noqa: BLE001 - try next model
-                    err = str(e)
+                    err = str(e)[:300]
+                    attempt["error"] = err
+                    examiner["attempts"].append(attempt)
+                    examiner["errors"][f"{provider_ex}/{m_ex}"] = err
                     log.warning("examiner %s/%s failed: %s", provider_ex, m_ex, e)
             if verdict is None:
-                examiner["error"] = err or "no examiner model available"
+                if examiner["errors"]:
+                    examiner["error"] = "; ".join(
+                        f"{k}: {v}" for k, v in examiner["errors"].items())
+                else:
+                    examiner["error"] = "no examiner model available"
                 verdict = {"ok": False, "quote_found": False, "quote_seen": "",
                            "answer_supported": "", "answers_the_question": None,
                            "problem": "",
                            "parse_error": examiner["error"]}
+        if citation_ok is False and verdict is not None:
+            # The cited text itself contradicts the citation. Keep the
+            # verifier's label/quote but make the citation-specific fields
+            # fail structurally; the answer remains shown as not confident.
+            verdict = dict(verdict)
+            verdict["citation_specific"] = False
+            verdict["region_supports"] = False
+            if not verdict.get("problem"):
+                verdict["problem"] = (
+                    "the cited text shares no content term with the claim")
         examiner.update(verdict)
+        examiner["citation_precheck"] = {
+            "ok": citation_ok, "score": round(float(citation_score), 4),
+            "shared_terms": citation_terms[:10],
+            "numeric_sink": bool(numeric_sink),
+        }
+        claim_verdicts = list((verdict or {}).get("claims") or [])
+        claim_by_index = {}
+        for _i, cv in enumerate(claim_verdicts):
+            try:
+                claim_by_index[int(cv.get("index", _i))] = cv
+            except (TypeError, ValueError):
+                claim_by_index[_i] = cv
+        claim_level_ran = bool(claim_level_on and claim_level_indices
+                               and claim_verdicts)
+        claim_min_shared = int(getattr(cfg.verify, "citation_min_terms", 1))
+        for i, claim in enumerate(samples[0].claims or []):
+            ctext = str(getattr(claim, "text", "") or "").strip()
+            cr = claim_regions[i] if i < len(claim_regions) else None
+            best = (cr or {}).get("best") or {}
+            cv = claim_by_index.get(i)
+            cev = [str(best.get("text") or "")] if best.get("text") else (
+                cited_texts if cited_texts else [])
+            if ctext and cev:
+                c_ok, c_score, c_terms = citation_overlap(
+                    ctext, cev, min_shared=claim_min_shared)
+            else:
+                c_ok, c_score, c_terms = None, 0.0, []
+            if best.get("text") and page_number_sink(
+                    ctext, [str(best.get("text") or "")]):
+                c_ok = False
+            if cv is not None:
+                label = normalize_claim_label(
+                    cv.get("label", ""), cv.get("answer_supported", ""),
+                    cv.get("citation_specific"), cv.get("region_supports"))
+                reason = str(cv.get("problem") or "")
+                citation_specific = cv.get("citation_specific")
+            elif claim_level_ran:
+                label = "insufficient"
+                reason = "the examiner did not return this claim's verdict"
+                citation_specific = None
+            else:
+                label = normalize_claim_label(
+                    "", examiner.get("answer_supported", ""),
+                    examiner.get("citation_specific"),
+                    examiner.get("region_supports"))
+                reason = "claim-level verdict unavailable; sample verdict used"
+                citation_specific = examiner.get("citation_specific")
+            if c_ok is False and label == "supported":
+                label = "partially_supported"
+                reason = (reason or
+                          "the candidate region shares no content term with the claim")
+            if best:
+                claim.regions = [GroundedRegion.from_dict(best)]
+            claim.label = label
+            claim.reason = reason
+            claim.confidence = claim_confidence(label)
+            claim.citation_specific = (
+                citation_specific if isinstance(citation_specific, bool)
+                else examiner.get("citation_specific"))
+            claim.withheld = False
+            if cr is not None:
+                cr.update({
+                    "label": label,
+                    "verified": label == "supported",
+                    "partial": label == "partially_supported",
+                    "citation_specific": claim.citation_specific,
+                    "region_supports": (cv or {}).get(
+                        "region_supports", examiner.get("region_supports")),
+                    "reason": reason,
+                    "confidence": claim.confidence,
+                    "citation_check": {
+                        "ok": c_ok, "score": round(float(c_score), 4),
+                        "shared_terms": c_terms[:10]},
+                })
+        labels = [c.label for c in (samples[0].claims or [])]
+        claim_level_ok = (not claim_level_on or not labels
+                          or (claim_level_ran and all(
+                              x == "supported" for x in labels)))
+        examiner["claim_level"] = {
+            "enabled": claim_level_on,
+            "ran": claim_level_ran,
+            "n_claims": len(labels),
+            "n_supported": sum(1 for x in labels if x == "supported"),
+            "n_partial": sum(1 for x in labels
+                             if x == "partially_supported"),
+            "n_failed": sum(1 for x in labels
+                            if x in ("insufficient", "unsupported")),
+            "labels": labels,
+            "ok": bool(claim_level_ok),
+        }
         confirmed, qs_match, ex_reason = examiner_confirmed(
-            verdict, samples[0].quote or "", cited_texts, ex_threshold, ocr_norm)
+            verdict, samples[0].quote or "", cited_texts, ex_threshold, ocr_norm,
+            page_texts=page_texts, region_texts=region_texts,
+            require_citation_specific=bool(getattr(
+                cfg.verify, "require_citation_specific", True))
+            and not text_examiner)
         examiner.update(confirmed=bool(confirmed),
                         quote_seen_match=round(float(qs_match), 4),
                         reason=ex_reason)
-        if not independence_ok:
+        if independence_required and not independence_ok:
             examiner.update(
                 confirmed=False,
                 reason="the examiner shares the reader's provider; "
@@ -920,24 +1370,30 @@ def answer_question(question: str, index_dir: str, work_dir: str,
 
     # Run 9 (s4.4): question-detail grounding (years/dates/units/entities).
     detail_mode = str(getattr(cfg.verify, "question_detail_check", "warn"))
-    corpus_years, corpus_entities = corpus_detail_vocab(con)
+    corpus_years, corpus_entities, corpus_durations = corpus_detail_vocab(con)
     details = check_question_details(
         question,
         cited_texts if cited_texts else ([crop_text] if has_text else []),
         quote_seen=examiner.get("quote_seen", ""),
         corpus_years=corpus_years, corpus_entities=corpus_entities,
-        mode=detail_mode)
+        corpus_durations=corpus_durations,
+        mode=detail_mode, page_texts=page_texts, deck_texts=deck_texts)
 
     # ---------------- Run 9 (s7): the three-state decision ----------------
     quote_on_page = bool(quote_ok)
     citation_conflict = citation_info["status"] == "unresolved"
-    rules_ok = bool(quote_on_page and details["ok"] and not citation_conflict)
+    rules_ok = bool(quote_on_page and details["ok"] and not citation_conflict
+                    and citation_ok is not False)
+    impossible_years = list(details.get("impossible_years") or [])
+    impossible_durations = list(details.get("impossible_durations") or [])
+    impossible_constraints = impossible_years + impossible_durations
     nothing_found = bool(is_unanswerable or samples[0].no_evidence
-                         or not str(answer).strip())
+                         or not str(answer).strip() or impossible_constraints)
     if nothing_found:
         state = "nothing_found"
     elif (bool(examiner["confirmed"]) and rules_ok and bool(examiner["ran"])
-          and independence_ok):
+          and (independence_ok or not independence_required)
+          and claim_level_ok):
         state = "verified"
     else:
         state = "not_confident"
@@ -945,8 +1401,17 @@ def answer_question(question: str, index_dir: str, work_dir: str,
 
     reasons: list[str] = []
     if state == "nothing_found":
-        reasons.append("the reader found nothing relevant on the retrieved "
-                       "pages")
+        if impossible_constraints:
+            impossible = set(impossible_constraints)
+            concrete = [w for w in (details.get("warnings") or [])
+                        if any(y in w for y in impossible)]
+            reasons.extend(concrete or [
+                "the question asks about "
+                f"{', '.join(impossible_constraints)}, which does not appear "
+                "anywhere in this document set"])
+        else:
+            reasons.append("the reader found nothing relevant on the "
+                           "retrieved pages")
     elif state == "not_confident":
         if examiner["error"] and not examiner["ran"]:
             reasons.append(f"the examiner check could not be run "
@@ -955,8 +1420,22 @@ def answer_question(question: str, index_dir: str, work_dir: str,
             reasons.append(examiner["reason"])
         if not examiner["ran"] and not examiner["error"]:
             reasons.append("the examiner check was not run")
-        if not independence_ok:
+        if independence_required and not independence_ok:
             reasons.append("the examiner was not independent of the reader")
+        if not claim_level_ok:
+            cl = examiner.get("claim_level") or {}
+            if not cl.get("ran"):
+                reasons.append("the examiner did not return claim-level "
+                               "verdicts")
+            else:
+                labels = cl.get("labels") or []
+                bad = [f"claim {i}={label}" for i, label in enumerate(labels)
+                       if label and label != "supported"]
+                reasons.append("not every claim is independently supported"
+                               + (f" ({', '.join(bad)})" if bad else ""))
+        if citation_ok is False:
+            reasons.append("the cited text shares no content term with the "
+                           "claim, so it is not specific evidence")
         if not quote_on_page:
             if citation_conflict:
                 reasons.append("the reader's citation did not resolve to the "
@@ -972,8 +1451,16 @@ def answer_question(question: str, index_dir: str, work_dir: str,
             reasons.append(w)
     state_reason = "; ".join(dict.fromkeys(r for r in reasons if r))
 
+    # P5: a separate visual-verification tier. The examiner looked at the
+    # region crop and confirmed the claim, but the text citation/quote did not
+    # resolve. Never mixed with text-verified counts.
+    visual_verified = bool(
+        not nothing_found and region_present and examiner["ran"]
+        and examiner["confirmed"] and not quote_on_page and claim_level_ok
+        and examiner["evidence_mode"] in ("region_crop", "answer_crop",
+                                          "claim_candidate", "sentence_crop"))
     tier = ("text" if verified
-            else "visual" if (region_present and not nothing_found) else "none")
+            else "visual" if visual_verified else "none")
 
     # final evidence boxes = cited sentences only (#1, #4, #6; Phase 2 across pages)
     cited_sentences: list[dict] = []
@@ -1073,6 +1560,39 @@ def answer_question(question: str, index_dir: str, work_dir: str,
         final_boxes = region_boxes
         final_frac = [box_frac(b, W, H) for b in region_boxes]
 
+    # Claim-level display: the selected document candidate is the source when
+    # it is a supported claim on the primary page. Otherwise it is exposed as
+    # an overlay, never silently substituted for the reader's citation.
+    claim_boxes_out = []
+    for _ci, cr in enumerate(claim_regions):
+        best = cr.get("best")
+        if not best or not best.get("box"):
+            continue
+        claim_boxes_out.append({
+            "claim_idx": _ci,
+            "text": cr.get("text", ""),
+            "label": cr.get("label", ""),
+            "doc_id": best.get("doc_id"),
+            "page": best.get("page"),
+            "box": list(best.get("box") or []),
+            "box_frac": list(best.get("box_frac") or []),
+            "score": cr.get("best_score", 0.0),
+        })
+    display_source = loc_source
+    claim_display = next(
+        (cr for cr in claim_regions if cr.get("label") == "supported"
+         and cr.get("best")), None)
+    if (state == "verified" and claim_display is not None
+            and claim_display["best"].get("doc_id") == doc_id
+            and int(claim_display["best"].get("page", -1)) == page
+            and claim_display["best"].get("box")):
+        cb = claim_display["best"]
+        final_boxes = [tuple(cb["box"])]
+        final_frac = [tuple(cb["box_frac"])]
+        evidence_valid = True
+        loc_score = max(float(loc_score), float(cb.get("score", 1.0)))
+        display_source = "claim_region"
+
     # Phase 4 features: citation lands on the retrieved top-1 page; visual gap
     top1_key = (ranked[0][0], ranked[0][1])
     cited_is_top1 = (any((d, p) == top1_key for d, p, _s in cited_refs)
@@ -1164,6 +1684,7 @@ def answer_question(question: str, index_dir: str, work_dir: str,
         "abstain_reason": abstain_reason,
         "not_found": abstained,
         "verified": verified,
+        "visual_verified": visual_verified,
         "state": state,
         "state_label": state_labels.get(state, state),
         "state_reason": state_reason,
@@ -1174,15 +1695,26 @@ def answer_question(question: str, index_dir: str, work_dir: str,
         "citations": {"status": citation_info["status"],
                       "n_refs": citation_info["n_refs"],
                       "n_resolved": citation_info["n_resolved"],
-                      "unresolved": citation_info["unresolved"]},
+                      "unresolved": citation_info["unresolved"],
+                      "derived_from_quote": bool(
+                          citation_info.get("derived_from_quote"))},
         "visual_confirm": {"attempted": bool(examiner["ran"]),
                            "method": examiner["served_by"],
                            "verdict": bool(examiner["confirmed"]),
                            "detail": examiner["problem"] or examiner["reason"]},
         "examiner": examiner,
+        "citation_check": {"ok": citation_ok,
+                           "score": round(float(citation_score), 4),
+                           "shared_terms": citation_terms[:10],
+                           "numeric_sink": bool(numeric_sink)},
+        "index_manifest": index_manifest,
+        "index_manifest_mismatches": index_manifest_mismatches,
+        "claim_regions": claim_regions,
+        "claim_level": examiner.get("claim_level", {}),
         "examiner_served_by": examiner["served_by"],
         "examiner_ran": bool(examiner["ran"]),
         "independence_ok": bool(independence_ok),
+        "independence_required": bool(independence_required),
         "reader_served_by": reader_served_by or f"{provider}/{model or ''}",
         "details": details,
         "support": {"score": round(float(support_score), 4),
@@ -1191,6 +1723,7 @@ def answer_question(question: str, index_dir: str, work_dir: str,
                     "warnings": support_warnings,
                     "supported": bool(supported)},
         "score": round(score, 4),
+        "score_display_only": True,
         "tau": tau if gate_effective != "none" else 0.0,
         "gate_mode": gate_effective,
         "retrieval": [{"doc_id": d, "page": p,
@@ -1208,6 +1741,9 @@ def answer_question(question: str, index_dir: str, work_dir: str,
                      "region_boxes": [list(b) for b in region_boxes],
                      "crop_text": crop_text, "crop_has_text": has_text,
                      "heat_concentration": round(heat_conc, 4),
+                     "claim_boxes": claim_boxes_out,
+                     "claim_display": claim_display,
+                     "display_source": display_source,
                      "page_width": W, "page_height": H,
                      "page_url": "/media/" + Path(img_path).name,
                      "localize": {"score": round(loc_score, 4), "valid": evidence_valid,

@@ -28,6 +28,7 @@ import argparse
 import datetime as dt
 import itertools
 import json
+import os
 import shutil
 import sqlite3
 import sys
@@ -47,8 +48,8 @@ from vvrag.eval.harness import select_resume_rows, validate_index_arg  # noqa: E
 from vvrag.eval.metrics import (bootstrap_ci, center_inside,  # noqa: E402
                                 clopper_pearson_interval,
                                 equivalent_correct, equivalent_correct_norm,
-                                equivalent_f1, equivalent_f1_norm, per_line_iou,
-                                sentence_precision_recall, union_iou,
+                                equivalent_f1, equivalent_f1_norm, partial_answer_correct,
+                                per_line_iou, sentence_precision_recall, union_iou,
                                 verified_stats, word_precision_recall_f1)
 from vvrag.ground.crop import overlay_heatmap  # noqa: E402
 from vvrag.ground.text_in_box import words_in_boxes  # noqa: E402
@@ -85,6 +86,9 @@ GROUNDING = 'span'
 ALLOW_MODEL_ROTATION = globals().get('ALLOW_MODEL_ROTATION', False)
 READER_MAX_WAIT_S = globals().get('READER_MAX_WAIT_S', 900.0)
 ALLOW_MISSING_VECTORS = False
+HYBRID_ALL = False
+QUERY_CACHE = ''
+N3 = 15
 ARMS = ['keyword', 'hybrid']
 MODELS = list(DEFAULT_MODELS)
 
@@ -112,11 +116,21 @@ def _is_quota_error(e: Exception) -> bool:
             or 'getaddrinfo' in s or 'ConnectError' in type(e).__name__)
 
 
+def _query_cache_dir() -> str:
+    if QUERY_CACHE:
+        return QUERY_CACHE
+    try:
+        from vvrag.config import load_config
+        return str(load_config().retriever.query_vectors_dir)
+    except Exception:  # noqa: BLE001
+        return 'data/query_cache'
+
+
 def check_query_cache(questions: list[str]) -> list[str]:
     """Return the questions missing a cached ColQwen query vector."""
     from vvrag.retrieve.query_vectors import QueryVectorStore
 
-    store = QueryVectorStore('data/query_cache')
+    store = QueryVectorStore(_query_cache_dir())
     return [q for q in questions if store.get(q) is None]
 
 
@@ -268,14 +282,32 @@ def run_single(item, idx, arm, model, wdir, n_samples):
         'answer': answer, 'abstained': abstained,
         'abstain_reason': res.get('abstain_reason', ''),
         'score': res.get('score'), 'tau': res.get('tau'),
+        'score_display_only': res.get('score_display_only', True),
         'verified': verified, 'tier': tier,
+        'visual_verified': bool(res.get('visual_verified')),
         'state': state, 'state_reason': res.get('state_reason', ''),
         'not_confident': state == 'not_confident', 'flagged': flagged,
         'reader_served_by': res.get('reader_served_by', ''),
         'examiner_served_by': res.get('examiner_served_by', ''),
         'examiner_ran': res.get('examiner_ran'),
+        'examiner_evidence_mode': (res.get('examiner') or {}).get('evidence_mode'),
+        'examiner_citation_specific': (res.get('examiner') or {}).get(
+            'citation_specific'),
+        'examiner_region_supports': (res.get('examiner') or {}).get(
+            'region_supports'),
+        'examiner_attempts': (res.get('examiner') or {}).get('attempts'),
+        'examiner_errors': (res.get('examiner') or {}).get('errors'),
         'examiner': res.get('examiner'), 'details': res.get('details'),
+        'citation_check': res.get('citation_check'),
+        'claim_regions': res.get('claim_regions'),
+        'claim_level': res.get('claim_level'),
+        'display_source': (res.get('evidence') or {}).get('display_source'),
+        'index_manifest': res.get('index_manifest'),
+        'index_manifest_mismatches': res.get('index_manifest_mismatches'),
+        'impossible_years': (res.get('details') or {}).get('impossible_years', []),
+        'hard_missing': (res.get('details') or {}).get('hard_missing', []),
         'independence_ok': res.get('independence_ok'),
+        'independence_required': res.get('independence_required'),
         'citations': res.get('citations'),
         'visual_confirm': res.get('visual_confirm'),
         'support': res.get('support'),
@@ -284,6 +316,9 @@ def run_single(item, idx, arm, model, wdir, n_samples):
         'equiv_correct_raw': (bool(abstained) if unanswerable else
                               (not abstained) and equivalent_correct(answer, golds)),
         'equiv_f1': eq_f1,
+        'equiv_f1_norm': eq_f1,
+        'partial_correct': (False if unanswerable else
+                            partial_answer_correct(answer, golds)),
         'page_hit': page_hit, 'gold_rank': gold_rank,
         'ev_doc': ev.get('doc_id'), 'ev_page': ev.get('page'),
         'pred_boxes': [list(b) for b in pred_boxes],
@@ -387,7 +422,7 @@ def build_matrix(limit=0):
         if want_kw:
             for model in MODELS:
                 cells.append((idx, item, 'keyword', model,
-                              3 if idx < 15 else 1))
+                              3 if idx < N3 else 1))
         idx += 1
     if not limit:
         for item in probes:
@@ -396,10 +431,12 @@ def build_matrix(limit=0):
                     cells.append((idx, item, 'keyword', model, 1))
             idx += 1
         if 'hybrid' in ARMS:
-            for item in gold:
-                if item['qid'] in hyb_ids:
-                    cells.append((idx, item, 'hybrid', MODELS[0], 1))
-                    idx += 1
+            hybrid_items = ((gold + probes) if HYBRID_ALL
+                            else [x for x in gold if x['qid'] in hyb_ids])
+            for item in hybrid_items:
+                cells.append((idx, item, 'hybrid', MODELS[0],
+                              3 if (idx < N3 and not HYBRID_ALL) else 1))
+                idx += 1
     return cells
 
 
@@ -437,7 +474,8 @@ def summarize(rows, label='testRun8'):
                 mrr_v = (sum(mrrs) / len(mrrs)) if mrrs else None
                 tiers = {}
                 for r in answered:
-                    t = r.get('tier') or 'none'
+                    t = ('text' if r.get('state') == 'verified'
+                         else 'visual' if r.get('visual_verified') else 'none')
                     tiers[t] = tiers.get(t, 0) + 1
                 cell.update(eq_shown=eq_shown, eq_verified=eq_ver,
                             false_abstention=false_abs, page_hit1=page_hit,
@@ -453,13 +491,22 @@ def summarize(rows, label='testRun8'):
                 abs_ok = [1.0 if r.get('abstained') else 0.0 for r in probes]
                 k2 = int(sum(abs_ok))
                 lo2, hi2 = clopper_pearson_interval(k2, len(abs_ok))
+                ans_k = len(probes) - k2
+                lo3, hi3 = clopper_pearson_interval(ans_k, len(probes))
                 false_ans = 1.0 - (k / len(flag_ok))
-                cell.update(probe_n=len(probes), probe_abstention=k / len(probes),
-                            probe_abstention_cp95=[round(lo, 4), round(hi, 4)],
-                            probe_nothing_found_rate=k2 / len(probes),
-                            probe_nothing_found_cp95=[round(lo2, 4), round(hi2, 4)],
-                            probe_cp95=[round(lo, 4), round(hi, 4)],
-                            probe_false_answer_rate=false_ans)
+                cell.update(
+                    probe_n=len(probes),
+                    probe_flag_rate=k / len(probes),
+                    probe_flag_cp95=[round(lo, 4), round(hi, 4)],
+                    probe_abstention=k2 / len(probes),
+                    probe_abstention_cp95=[round(lo2, 4), round(hi2, 4)],
+                    probe_nothing_found_rate=k2 / len(probes),
+                    probe_nothing_found_cp95=[round(lo2, 4), round(hi2, 4)],
+                    probe_answered_rate=ans_k / len(probes),
+                    probe_answered_cp95=[round(lo3, 4), round(hi3, 4)],
+                    probe_false_verified_rate=false_ans,
+                    probe_false_answer_rate=false_ans,  # legacy alias
+                    probe_cp95=[round(lo, 4), round(hi, 4)])
                 by_cat = {}
                 for cat in sorted({r.get('probe_category') for r in probes
                                    if r.get('probe_category')}):
@@ -469,7 +516,8 @@ def summarize(rows, label='testRun8'):
                     kk2 = sum(1 for r in sub_p if r.get('abstained'))
                     by_cat[cat] = {'n': len(sub_p), 'flagged': kk,
                                    'flagged_cp95': [round(l2, 4), round(h2, 4)],
-                                   'nothing_found': kk2}
+                                   'nothing_found': kk2,
+                                   'answered': len(sub_p) - kk2}
                 cell['probe_by_category'] = by_cat
             cell['run9'] = verified_stats(sub, examiner_only=True)
             out['cells'][f'{arm}|{model}'] = cell
@@ -494,7 +542,16 @@ def summarize(rows, label='testRun8'):
                       f'coverage={_fmt(v9["answer_coverage"])} '
                       f'source_acc={_fmt(v9["source_accuracy"])} '
                       f'exam_leniency={_fmt(v9["examiner_leniency"])} '
-                      f'(n_conf={v9["n_confirmed"]})')
+                      f'(n_conf={v9["n_confirmed"]}) '
+                      f'visual={v9["n_visual_verified"]}'
+                      f'(prec {_fmt(v9["visual_verified_precision"])}) '
+                      f'derived={v9["n_derived_citations"]}'
+                      f'(prec {_fmt(v9["derived_citation_precision"])}) '
+                      f'cite_rej={_fmt(v9["citation_reject_rate"])} '
+                      f'ex_cite={_fmt(v9["examiner_citation_specific_rate"])} '
+                      f'claims={v9["n_claims_supported"]}/'
+                      f'{v9["n_claims"]} '
+                      f'claim_fail={_fmt(v9["claim_failure_rate"])}')
                 for cat in ('single-hop', 'multi-hop', 'image-only'):
                     s2 = [r for r in gold if r.get('category') == cat]
                     if s2:
@@ -503,14 +560,16 @@ def summarize(rows, label='testRun8'):
                               f'strict={_fmt(_mean([1.0 if r.get("equiv_verified") else 0.0 for r in s2]))} '
                               f'false_abst={_fmt(_mean([1.0 if r.get("abstained") else 0.0 for r in s2]))}')
             if probes:
-                print(f'  probes: flagged={cell["probe_abstention"]:.3f} '
-                      f'CP95={cell["probe_cp95"]} '
+                print(f'  probes: flagged={cell["probe_flag_rate"]:.3f} '
+                      f'CP95={cell["probe_flag_cp95"]} '
                       f'nothing_found={cell["probe_nothing_found_rate"]:.3f} '
+                      f'answered={cell["probe_answered_rate"]:.3f} '
                       f'false_verified={_fmt(cell["run9"]["false_verified_on_probes"])} '
-                      f'false_answer={cell["probe_false_answer_rate"]:.3f}')
+                      f'false_visual={_fmt(cell["run9"]["false_visual_verified_on_probes"])}')
                 for cat, d in cell['probe_by_category'].items():
                     print(f'    {cat:<17} flagged {d["flagged"]}/{d["n"]} '
-                          f'(nothing_found {d["nothing_found"]}) '
+                          f'(nothing_found {d["nothing_found"]}, '
+                          f'answered {d["answered"]}) '
                           f'CP95={d["flagged_cp95"]}')
     modes = {}
     for r in ok:
@@ -525,11 +584,17 @@ def preflight_hybrid():
     """Hard precondition: cached query vectors for every selected question."""
     if 'hybrid' not in ARMS or READER_MODE == 'mock':
         return
-    hyb = json.loads(HYBRID_ITEMS.read_text(encoding='utf-8'))
-    missing = check_query_cache([h['question'] for h in hyb])
+    gold, probes = load_items()
+    if HYBRID_ALL:
+        items = gold + probes
+    else:
+        hyb = json.loads(HYBRID_ITEMS.read_text(encoding='utf-8'))
+        ids = {h['qid'] for h in hyb}
+        items = [x for x in gold if x['qid'] in ids]
+    missing = check_query_cache([h['question'] for h in items])
     if missing and not ALLOW_MISSING_VECTORS:
-        print(f'PRECONDITION FAILED: {len(missing)}/{len(hyb)} hybrid items have '
-              f'no cached query vector in data/query_cache.')
+        print(f'PRECONDITION FAILED: {len(missing)}/{len(items)} hybrid items have '
+              f'no cached query vector in {_query_cache_dir()}.')
         print('Run scripts/precompute_query_vectors.py on Colab first '
               '(see PIPELINE.md), or pass --allow-missing-vectors to fall back '
               'to keyword per row (recorded in retrieval.note).')
@@ -537,7 +602,7 @@ def preflight_hybrid():
             print('  missing:', q[:90])
         raise SystemExit(2)
     if missing:
-        print(f'WARNING: {len(missing)}/{len(hyb)} hybrid items lack cached '
+        print(f'WARNING: {len(missing)}/{len(items)} hybrid items lack cached '
               f'vectors; those rows will fall back to keyword.')
 
 
@@ -600,7 +665,7 @@ def resume(out: Path, only_models: list[str] | None = None) -> None:
 
 def main():
     global INDEX, GOLD_PATH, PROBE_PATH, READER_MODE, GROUNDING
-    global ARMS, MODELS, ALLOW_MISSING_VECTORS
+    global ARMS, MODELS, ALLOW_MISSING_VECTORS, HYBRID_ALL, QUERY_CACHE, N3
     ap = argparse.ArgumentParser(description='testRun8 arm x model matrix')
     ap.add_argument('--index', default=str(INDEX))
     ap.add_argument('--gold', default=str(GOLD_PATH))
@@ -612,6 +677,11 @@ def main():
                     help='comma list of pinned models (model A first)')
     ap.add_argument('--n3', type=int, default=15,
                     help='first N gold items use n_samples=3 (keyword arms)')
+    ap.add_argument('--hybrid-all', action='store_true',
+                    help='hybrid arm covers all gold + probes (not the 24-item '
+                         'Run 8 selection)')
+    ap.add_argument('--query-cache', default='',
+                    help='override query-vector cache dir (default from config)')
     ap.add_argument('--limit', type=int, default=0,
                     help='only first N gold items (probes/hybrid skipped)')
     ap.add_argument('--allow-missing-vectors', action='store_true',
@@ -634,6 +704,11 @@ def main():
     ARMS = [a.strip() for a in args.arms.split(',') if a.strip()]
     MODELS = [m.strip() for m in args.models.split(',') if m.strip()]
     ALLOW_MISSING_VECTORS = args.allow_missing_vectors
+    HYBRID_ALL = bool(args.hybrid_all)
+    QUERY_CACHE = args.query_cache
+    N3 = max(0, int(args.n3))
+    if QUERY_CACHE:
+        os.environ['VVRAG_QUERY_VECTORS_DIR'] = QUERY_CACHE
 
     if args.summarize:
         out = Path(args.summarize)
@@ -664,9 +739,16 @@ def main():
     PROBE_PATH = Path(args.probes)
 
     if args.check_cache:
-        hyb = json.loads(HYBRID_ITEMS.read_text(encoding='utf-8'))
-        missing = check_query_cache([h['question'] for h in hyb])
-        print(f'hybrid cache coverage: {len(hyb) - len(missing)}/{len(hyb)}')
+        gold, probes = load_items()
+        if HYBRID_ALL:
+            items = gold + probes
+        else:
+            hyb = json.loads(HYBRID_ITEMS.read_text(encoding='utf-8'))
+            ids = {h['qid'] for h in hyb}
+            items = [x for x in gold if x['qid'] in ids]
+        missing = check_query_cache([h['question'] for h in items])
+        print(f'hybrid cache coverage ({_query_cache_dir()}): '
+              f'{len(items) - len(missing)}/{len(items)}')
         for q in missing:
             print('  MISSING:', q[:90])
         raise SystemExit(1 if missing else 0)

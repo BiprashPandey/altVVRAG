@@ -190,10 +190,13 @@ def sentences_from_page(
             width = int(row[0]) if row and row[0] else max(
                 w.box[2] for w in words)
             if width:
-                from vvrag.ingest.tables import table_units
+                from vvrag.ingest.tables import number_unit_units, table_units
 
                 first = max((s.sent_id for s in sents), default=-1) + 1
-                sents = sents + table_units(words, width, first_id=first)
+                extra = table_units(words, width, first_id=first)
+                extra += number_unit_units(words, width,
+                                           first_id=first + len(extra))
+                sents = sents + extra
         except Exception:  # noqa: BLE001 - tables are best-effort units
             pass
     return sents, words

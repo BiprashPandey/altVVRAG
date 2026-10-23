@@ -44,6 +44,8 @@ def main() -> None:
     ap.add_argument("--index", default="data/index")
     ap.add_argument("--gold", default="data/gold.json")
     ap.add_argument("--out", default="")
+    ap.add_argument("--query-cache", default="data/query_cache",
+                    help="query-vector cache directory")
     args = ap.parse_args()
 
     index = Path(args.index)
@@ -55,7 +57,7 @@ def main() -> None:
     con = connect_sqlite(index / "meta.db")
     pages = [(r[0], int(r[1])) for r in
              con.execute("SELECT doc_id, page FROM pages ORDER BY doc_id, page").fetchall()]
-    store = QueryVectorStore("data/query_cache")
+    store = QueryVectorStore(args.query_cache)
     n_q = len(gold)
     cached, _ = store.coverage([g["question"] for g in gold])
     print(f"index pages={len(pages)}  gold={n_q}  query cache={cached}/{n_q}")

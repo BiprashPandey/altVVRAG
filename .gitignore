@@ -3,6 +3,7 @@ data/
 results/
 *.npy
 index.zip
+*.zip
 
 # documents / reports (not pushed)
 *.pdf

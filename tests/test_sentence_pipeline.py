@@ -10,7 +10,7 @@ import vvrag.reader.client as client_mod
 from vvrag.ingest.index import connect_sqlite
 from vvrag.ingest.run_ingest import run_ingest
 from vvrag.ingest.sentences import sentences_from_page
-from vvrag.schemas import ReaderSample
+from vvrag.schemas import Claim, ReaderSample
 from vvrag.ui.qa import answer_question
 
 
@@ -19,6 +19,7 @@ def _write_pdf(raw):
         page = doc.new_page(width=600, height=800)
         page.insert_text((50, 40), "Quarterly report")
         page.insert_text((50, 120), "The Aurora revenue was 42 million in this quarter.")
+        page.insert_text((50, 220), "Page 12")
         doc.save(raw / "deck.pdf")
 
 
@@ -38,7 +39,8 @@ def test_citation_boxes_come_from_cited_sentence(monkeypatch, tmp_path):
     def fake_run(reader, images, prompt, n_samples=3, temperature=0.0, max_claims=5):
         return [ReaderSample(sample_id=0, answer="42 million",
                              quote="Aurora revenue was 42 million",
-                             sentence_ids=[target.sent_id], claims=[])], 1
+                             sentence_ids=[target.sent_id],
+                             claims=[Claim(text="Aurora revenue was 42 million")])], 1
 
     monkeypatch.setattr(client_mod, "run_reader_samples", fake_run)
     monkeypatch.setattr(client_mod, "create_reader", lambda *a, **k: object())
@@ -60,6 +62,43 @@ def test_citation_boxes_come_from_cited_sentence(monkeypatch, tmp_path):
     assert (x1 - x0) < (tx1 - tx0)  # strictly tighter than the whole sentence
     assert r["cited_sentences"][0]["sent_id"] == target.sent_id
     assert r["cited_sentences"][0]["text"] == target.text
+    assert r["claim_regions"]
+    assert r["claim_regions"][0]["text"] == "Aurora revenue was 42 million"
+    assert r["claim_regions"][0]["best"] is not None
+    assert r["claim_regions"][0]["best"]["doc_id"] == doc_id
+
+
+def test_quote_only_reader_derives_unique_sentence(monkeypatch, tmp_path):
+    # P3: a table answer may be returned with a verbatim quote but no
+    # sentence_ids. If exactly one shown sentence contains that quote, derive
+    # the citation deterministically (auditable via derived_from_quote).
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    _write_pdf(raw)
+    index = tmp_path / "index"
+    run_ingest(raw, index, dpi=150, embedder="fake", skip_ocr=True,
+               qdrant_path=str(index / "qdrant"))
+    con = connect_sqlite(index / "meta.db")
+    doc_id, page = con.execute("SELECT doc_id, page FROM pages LIMIT 1").fetchone()
+    sents, _ = sentences_from_page(con, doc_id, page)
+    target = next(s for s in sents if "42 million" in s.text)
+
+    def fake_run(reader, images, prompt, n_samples=3, temperature=0.0, max_claims=5):
+        return [ReaderSample(sample_id=0, answer="42 million",
+                             quote="Aurora revenue was 42 million",
+                             sentence_ids=[], claims=[])], 1
+
+    monkeypatch.setattr(client_mod, "run_reader_samples", fake_run)
+    monkeypatch.setattr(client_mod, "create_reader", lambda *a, **k: object())
+
+    r = answer_question("What was the Aurora revenue?", str(index),
+                        str(tmp_path / "work"), reader_mode="live",
+                        n_samples=1, grounding="span", gate="none",
+                        doc_id=doc_id)
+    assert r["citations"]["derived_from_quote"] is True
+    assert r["evidence"]["sentence_ids"] == [target.sent_id]
+    assert r["evidence"]["localize"]["quote_ok"] is True
+    assert r["cited_sentences"][0]["sent_id"] == target.sent_id
 
 
 def test_bad_quote_triggers_retry_then_not_confident(monkeypatch, tmp_path):
@@ -144,3 +183,95 @@ def test_unanswerable_retry_recovers_ocr_noise_answer(monkeypatch, tmp_path):
     assert r["answer"] == "42 million"
     assert r["evidence"]["localize"]["quote_ok"] is True
     assert r["evidence"]["sentence_ids"] == [target.sent_id]
+
+
+def test_page_number_citation_is_not_specific(monkeypatch, tmp_path):
+    # Report gap: a true claim can be attached to a fabricated citation. The
+    # deterministic precheck must reject a page-number-only cited sentence even
+    # when the mock examiner finds that quoted page number.
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    _write_pdf(raw)
+    index = tmp_path / "index"
+    run_ingest(raw, index, dpi=150, embedder="fake", skip_ocr=True,
+               qdrant_path=str(index / "qdrant"))
+    con = connect_sqlite(index / "meta.db")
+    doc_id, page = con.execute("SELECT doc_id, page FROM pages LIMIT 1").fetchone()
+    sents, _ = sentences_from_page(con, doc_id, page)
+    page_num = next(s for s in sents if "Page 12" in s.text)
+
+    def fake_run(reader, images, prompt, n_samples=3,
+                 temperature=0.0, max_claims=5):
+        return [ReaderSample(sample_id=0, answer="42 million",
+                             quote="Page 12",
+                             sentence_ids=[page_num.sent_id], claims=[])], 1
+
+    monkeypatch.setattr(client_mod, "run_reader_samples", fake_run)
+
+    r = answer_question("What was the Aurora revenue?", str(index),
+                        str(tmp_path / "work"), reader_mode="mock",
+                        n_samples=1, grounding="span", gate="none",
+                        doc_id=doc_id)
+    assert r["answer"] == "42 million"          # still shown
+    assert r["abstained"] is False
+    assert r["state"] == "not_confident"
+    assert r["citation_check"]["ok"] is False
+    assert r["citation_check"]["numeric_sink"] is True
+    assert r["examiner"]["citation_specific"] is False
+    assert r["verified"] is False
+
+
+def test_claim_level_labels_and_display_region(monkeypatch, tmp_path):
+    import json
+
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    _write_pdf(raw)
+    index = tmp_path / "index"
+    run_ingest(raw, index, dpi=150, embedder="fake", skip_ocr=True,
+               qdrant_path=str(index / "qdrant"))
+    con = connect_sqlite(index / "meta.db")
+    doc_id, page = con.execute("SELECT doc_id, page FROM pages LIMIT 1").fetchone()
+    sents, _ = sentences_from_page(con, doc_id, page)
+    target = next(s for s in sents if "42 million" in s.text)
+
+    def fake_run(reader, images, prompt, n_samples=3, temperature=0.0, max_claims=5):
+        return [ReaderSample(sample_id=0, answer="42 million",
+                             quote="Aurora revenue was 42 million",
+                             sentence_ids=[target.sent_id],
+                             claims=[Claim(text="Aurora revenue was 42 million")])], 1
+
+    class FakeExaminer:
+        def generate(self, images, prompt, temperature, n):
+            assert "claims" in prompt
+            return [json.dumps({
+                "quote_found": True,
+                "quote_seen": "Aurora revenue was 42 million",
+                "answer_supported": "yes",
+                "answers_the_question": True,
+                "citation_specific": True,
+                "region_supports": True,
+                "problem": "",
+                "claims": [{
+                    "index": 0, "label": "supported",
+                    "citation_specific": True, "region_supports": True,
+                    "quote_found": True,
+                    "quote_seen": "Aurora revenue was 42 million",
+                    "problem": "",
+                }],
+            })]
+
+    monkeypatch.setattr(client_mod, "run_reader_samples", fake_run)
+    monkeypatch.setattr(client_mod, "create_reader", lambda *a, **k: FakeExaminer())
+
+    r = answer_question("What was the Aurora revenue?", str(index),
+                        str(tmp_path / "work"), reader_mode="live",
+                        n_samples=1, grounding="span", gate="none",
+                        doc_id=doc_id)
+
+    assert r["state"] == "verified", r["state_reason"]
+    assert r["claims"][0]["label"] == "supported"
+    assert r["claim_regions"][0]["label"] == "supported"
+    assert r["claim_level"]["ran"] is True
+    assert r["claim_level"]["n_supported"] == 1
+    assert r["evidence"]["display_source"] == "claim_region"
