@@ -111,12 +111,12 @@ Files: `src/vvrag/retrieve/fusion.py`, `src/vvrag/retrieve/rerank.py`,
 - New `scripts/tune_retrieval.py`: deterministic keyword/visual/hybrid sweep
   over fusion weights, RRF `k`, candidate `k`, and reranker off/lexical/both.
   Writes `rows.json` (meta + summary + rows) and `summary.csv`.
-- New self-contained Colab notebooks:
-  - `notebooks/phase0_dev_query_vectors_colab.ipynb` (81 dev questions;
-    outputs `phase0_dev_query_cache.zip`).
-  - `notebooks/phase0_dev_retrieval_colab.ipynb` (auto-downloads the
-    160-page dev index from the public GitHub Release, verifies SHA256,
-    encodes queries, runs the full sweep, downloads a compact bundle).
+- New single self-contained Colab notebook:
+  `notebooks/phase0_dev_retrieval_colab.ipynb`. It auto-downloads the
+  160-page dev index from the public GitHub Release, verifies SHA256,
+  encodes all 81 dev questions itself (incremental cache reuse), runs the
+  full sweep, and downloads a compact bundle. There is no separate
+  query-vector notebook.
 - Public index release:
   `https://github.com/BiprashPandey/altVVRAG/releases/tag/phase0-dev-index-v1`
   (`slidevqa_index.zip`, 134,122,541 bytes, SHA256
