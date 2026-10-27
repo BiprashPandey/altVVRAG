@@ -12,6 +12,7 @@ from vvrag.ingest.index import connect_sqlite
 from vvrag.ingest.run_ingest import run_ingest
 from vvrag.retrieve.bridge import (missing_tokens, question_tokens,
                                    resolve_bridge)
+from vvrag.retrieve.fusion import rrf_fuse
 from vvrag.retrieve.rerank import lexical_rerank
 from vvrag.schemas import WordBox
 
@@ -44,6 +45,17 @@ def test_lexical_rerank_number_bonus_and_determinism():
     out2 = lexical_rerank(q, hit + miss, k=5)
     assert out1 == out2  # deterministic
     assert out1[0][0] == "docA"
+
+
+def test_rrf_weights_prefer_visual_and_reject_negative():
+    kw = [("docA", 0), ("docB", 1)]
+    vis = [("docB", 1), ("docA", 0)]
+    equal = rrf_fuse([kw, vis], k=60)
+    assert equal[0][2] == equal[1][2]  # symmetric ranks tie
+    visual_heavy = rrf_fuse([kw, vis], k=60, weights=[1.0, 5.0])
+    assert (visual_heavy[0][0], visual_heavy[0][1]) == ("docB", 1)
+    with pytest.raises(ValueError, match="non-negative"):
+        rrf_fuse([kw, vis], weights=[1.0, -1.0])
 
 
 def test_bridge_missing_tokens_and_resolution():

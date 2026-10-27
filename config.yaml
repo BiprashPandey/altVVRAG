@@ -10,6 +10,9 @@ retriever:
   query_encoder: "colqwen"   # rec 5: real ColQwen text encoder; "fake" for CPU tests
   retrieval_mode: "hybrid"   # Run 9: keyword | visual | hybrid (default hybrid)
   rrf_k: 60                  # reciprocal rank fusion constant
+  keyword_weight: 1.0        # Phase 0: RRF weight for the keyword ranking
+  visual_weight: 1.0         # Phase 0: RRF weight for the ColQwen ranking
+  candidate_k: 10            # Phase 0: pages fed to the reranker before reader top-k
   query_vectors_dir: "data/query_cache"   # precomputed query vectors (Colab/laptop GPU)
   online_encoder: true       # Run 9: encode cache misses online (text-side ColQwen)
   online_encoder_device: "cuda"
@@ -26,7 +29,7 @@ reader:
   model: "gemini-3.5-flash"             # verified live 2026-10-15 (2.5-flash retired); never hardcode in code
   n_samples: 3
   temperature: 0.7
-  max_output_tokens: 512
+  max_output_tokens: 4096
   max_claims: 5
   fallback_provider: ""                 # rec 9: e.g. "groq"; leave empty to disable
   fallback_model: ""                    # e.g. "llama-3.3-70b-versatile"

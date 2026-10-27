@@ -92,6 +92,7 @@ def build_multipage_sentence_prompt(
     crop_text: str | None = None,
     max_claims: int = 5,
     max_chars: int = 12000,
+    stats_out: dict | None = None,
 ) -> str:
     """Phase 2: one prompt carrying several pages (primary has the images).
 
@@ -102,8 +103,15 @@ def build_multipage_sentence_prompt(
     """
     base = build_prompt(question, crop_text, max_claims)
     if not page_blocks:
+        if stats_out is not None:
+            stats_out.clear()
+            stats_out.update({"max_chars": max_chars, "pages": [],
+                              "body_chars": 0, "included_chars": 0,
+                              "truncated": False})
         return base
     blocks: list[str] = []
+    block_meta: list[dict] = []
+    pos = 0
     for b in page_blocks:
         lab = int(b.get("label", b["page"]))
         page = int(b["page"])
@@ -114,10 +122,39 @@ def build_multipage_sentence_prompt(
         shown = sents if len(sents) <= 200 else (sents[:150] + sents[-50:])
         vocab = "\n".join(f"[p{lab}.s{s.sent_id}] {s.text}" for s in shown)
         hdr = f"PAGE p{lab} (pdf page {page}" + (f", document {doc}" if doc else "") + f"; {tag}):"
-        blocks.append(f"{hdr}\n{vocab if vocab else '(no readable sentences)'}")
+        block = f"{hdr}\n{vocab if vocab else '(no readable sentences)'}"
+        if blocks:
+            pos += 2  # the "\n\n" separator between blocks
+        start = pos
+        pos += len(block)
+        block_meta.append({"label": lab, "page": page, "doc_id": doc,
+                           "chars": len(block), "start": start,
+                           "sentences": len(shown)})
+        blocks.append(block)
     body = "\n\n".join(blocks)
-    if len(body) > max_chars:
+    original_body_chars = len(body)
+    truncated = original_body_chars > max_chars
+    if truncated:
         body = body[:max_chars - 3] + "..."
+    if stats_out is not None:
+        content_limit = max_chars - 3 if truncated else original_body_chars
+        pages = []
+        for m in block_meta:
+            inc = max(0, min(m["start"] + m["chars"], content_limit) - m["start"])
+            pages.append({
+                "label": m["label"], "page": m["page"], "doc_id": m["doc_id"],
+                "chars": m["chars"], "included_chars": inc,
+                "included": inc > 0, "truncated": inc < m["chars"],
+                "sentences": m["sentences"],
+            })
+        stats_out.clear()
+        stats_out.update({
+            "max_chars": max_chars,
+            "body_chars": original_body_chars,
+            "included_chars": min(original_body_chars, content_limit),
+            "truncated": truncated,
+            "pages": pages,
+        })
     extra = (
         "Numbered sentences from the candidate pages (cite these as evidence). "
         "Each citation id is namespaced as `p<label>.s<id>`, e.g. [p1.s12] must "

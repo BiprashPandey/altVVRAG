@@ -12,7 +12,8 @@ from vvrag.reader.claims import (
     validate_evidence_ids,
     validate_sentence_ids,
 )
-from vvrag.reader.client import SequenceMockReader, run_reader_samples
+from vvrag.reader.client import (CachedReader, ReaderClient, SequenceMockReader,
+                                 run_reader_samples)
 from vvrag.reader.prompts import build_prompt, build_sentence_prompt
 from vvrag.schemas import SentenceSpan
 
@@ -125,3 +126,23 @@ def test_live_gemini_json_rate(tmp_path):
         _, _, good = parse_reader_output(out)
         ok += good
     assert ok / n >= 0.95
+
+
+def test_cache_key_includes_max_output_tokens(tmp_path):
+    from vvrag.cache import DiskCache
+    from vvrag.ratelimit import RateLimiter
+
+    class Probe(ReaderClient):
+        def __init__(self, budget: int) -> None:
+            self.max_output_tokens = budget
+
+        def generate(self, images, prompt, temperature, n):
+            return [f'{{"answer": "{self.max_output_tokens}"}}' for _ in range(n)]
+
+    cache = DiskCache(tmp_path / "cache")
+    low = CachedReader(Probe(512), cache, RateLimiter(1000),
+                       provider="probe", model="m")
+    high = CachedReader(Probe(4096), cache, RateLimiter(1000),
+                        provider="probe", model="m")
+    assert "512" in low.generate([], "q", 0.0, 1)[0]
+    assert "4096" in high.generate([], "q", 0.0, 1)[0]

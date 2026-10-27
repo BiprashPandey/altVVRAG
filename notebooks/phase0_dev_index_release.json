@@ -1,0 +1,11 @@
+{
+  "release": "phase0-dev-index-v1",
+  "asset": "slidevqa_index.zip",
+  "url": "https://github.com/BiprashPandey/altVVRAG/releases/download/phase0-dev-index-v1/slidevqa_index.zip",
+  "sha256": "d30ad0de69d8a1cd8de6a7a22abc0906d4a866d06b37334afad37c34d5cfa226",
+  "size_bytes": 134122541,
+  "pages": 160,
+  "decks": 8,
+  "source": "data/index (SlideVQA dev subset, 8 decks)",
+  "used_by": "notebooks/phase0_dev_retrieval_colab.ipynb"
+}

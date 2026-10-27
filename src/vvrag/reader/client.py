@@ -254,6 +254,7 @@ class CachedReader(ReaderClient):
                 "images": image_hashes,
                 "temperature": temperature,
                 "sample_index": i,
+                "max_output_tokens": getattr(self.inner, "max_output_tokens", None),
             }
             cached = self.cache.get(key)
             if cached is not None:

@@ -28,6 +28,13 @@ class RetrieverConfig:
     # otherwise the call falls back to keyword with an honest note.
     retrieval_mode: str = "hybrid"
     rrf_k: int = 60
+    # Phase 0 retrieval tuning: reciprocal-rank fusion weights and the
+    # candidate pool size before the lexical reranker. The reader still sees
+    # only `reader.max_pages`; these control what the reranker gets to choose
+    # from. Defaults preserve the historical 1:1 / 5-candidate behaviour.
+    keyword_weight: float = 1.0
+    visual_weight: float = 1.0
+    candidate_k: int = 5
     query_vectors_dir: str = "data/query_cache"
     online_encoder: bool = True
     online_encoder_device: str = "cuda"

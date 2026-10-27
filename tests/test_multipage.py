@@ -54,6 +54,10 @@ def test_citation_on_secondary_page(monkeypatch, tmp_path):
     assert not r["abstained"]
     ctx = r["retrieval_debug"]["pages_context"]
     assert [c["page"] for c in ctx][:2] == [0, 1]  # page 0 is the primary
+    assert r["retrieval_debug"]["reader_pages"] == 3
+    pp = r["retrieval_debug"]["prompt_pages"]
+    assert pp["truncated"] is False
+    assert [p["page"] for p in pp["pages"]] == [0, 1]
     ev = r["evidence"]
     assert ev["localize"]["source"] == "sentence_ids"
     assert ev["localize"]["quote_ok"] is True

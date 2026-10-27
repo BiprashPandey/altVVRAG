@@ -55,6 +55,8 @@ def rrf_fuse(rankings: list[list[tuple[str, int]]], k: int = 60,
     weights = list(weights) if weights else [1.0] * len(rankings)
     if len(weights) != len(rankings):
         raise ValueError("weights length must match rankings")
+    if any(float(w) < 0 for w in weights):
+        raise ValueError("RRF weights must be non-negative")
     fused: dict[tuple[str, int], float] = {}
     for w, ranking in zip(weights, rankings):
         for i, key in enumerate(ranking):

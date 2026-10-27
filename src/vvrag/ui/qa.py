@@ -355,6 +355,10 @@ def answer_question(question: str, index_dir: str, work_dir: str,
     cfg_ret = getattr(cfg, "retriever", None)
     mode = (retrieval_mode or getattr(cfg_ret, "retrieval_mode", "keyword")
             or "keyword").lower()
+    reader_pages = max(1, int(getattr(cfg.reader, "max_pages", 3)))
+    candidate_k = max(1, int(getattr(cfg_ret, "candidate_k", 5)))
+    rerank_k = max(1, int(getattr(cfg_ret, "rerank_top_k", 5)))
+    pool_k = max(candidate_k, rerank_k, reader_pages)
     kw_full = keyword_rank(question, con, limit=None, doc_id=doc_id)
     if not kw_full:
         # genuinely empty index: the only honest abstention
@@ -409,7 +413,7 @@ def answer_question(question: str, index_dir: str, work_dir: str,
             if not retrieval_note:
                 retrieval_note = ("no cached query vector; keyword fallback "
                                   "(run scripts/precompute_query_vectors.py)")
-            ranked = kw_full[:5]
+            ranked = kw_full[:pool_k]
         else:
             try:
                 from vvrag.retrieve.fusion import (deck_aggregate, rank_order,
@@ -436,26 +440,30 @@ def answer_question(question: str, index_dir: str, work_dir: str,
                     order = vis_order
                     rank_scores = vis_scores
                 else:
-                    fused = rrf_fuse([kw_pages, vis_order],
-                                     k=int(getattr(cfg_ret, "rrf_k", 60)))
+                    fused = rrf_fuse(
+                        [kw_pages, vis_order],
+                        k=int(getattr(cfg_ret, "rrf_k", 60)),
+                        weights=[float(getattr(cfg_ret, "keyword_weight", 1.0)),
+                                 float(getattr(cfg_ret, "visual_weight", 1.0))],
+                    )
                     order = [(d, p) for d, p, _s in fused]
                     rank_scores = {(d, p): s for d, p, s in fused}
                 top = []
-                for d, p in order[:max(5, int(getattr(cfg_ret, "rerank_top_k", 5)))]:
+                for d, p in order[:pool_k]:
                     key = (d, p)
                     if key not in words_map:
                         words_map[key] = page_words(con, d, p)
                     top.append((d, p, rank_scores[key], words_map[key]))
-                ranked = top[:5]
+                ranked = top
                 mode_used = mode
             except Exception as e:  # noqa: BLE001 - honest keyword fallback
                 mode_used = "keyword"
                 retrieval_note = (f"visual scoring failed "
                                   f"({type(e).__name__}: {str(e)[:80]}); "
                                   f"keyword fallback")
-                ranked = kw_full[:5]
+                ranked = kw_full[:pool_k]
     else:
-        ranked = kw_full[:5]
+        ranked = kw_full[:pool_k]
 
     # Phase 4: deterministic lexical rerank after fusion (IDF + bigram +
     # number bonus). Pure CPU, no model. Recorded for measurement runs.
@@ -464,7 +472,7 @@ def answer_question(question: str, index_dir: str, work_dir: str,
         from vvrag.retrieve.rerank import lexical_rerank
 
         ranked = lexical_rerank(
-            question, ranked, k=int(getattr(cfg_ret, "rerank_top_k", 5)))
+            question, ranked, k=max(rerank_k, reader_pages))
         rerank_used = True
 
     def _top_pages(scores, n: int = 3):
@@ -478,6 +486,12 @@ def answer_question(question: str, index_dir: str, work_dir: str,
         "mode_requested": mode,
         "mode_used": mode_used,
         "rerank_used": rerank_used,
+        "keyword_weight": float(getattr(cfg_ret, "keyword_weight", 1.0)),
+        "visual_weight": float(getattr(cfg_ret, "visual_weight", 1.0)),
+        "candidate_k": candidate_k,
+        "rerank_k": rerank_k,
+        "reader_pages": reader_pages,
+        "candidate_pool_size": len(ranked),
         "note": retrieval_note,
         "keyword_top5": [{"doc_id": d, "page": p, "score": round(float(s), 4)}
                          for d, p, s, _w in kw_full[:5]],
@@ -490,7 +504,7 @@ def answer_question(question: str, index_dir: str, work_dir: str,
     # ---------------- page state + per-page views (Phase 2) --------------
     primary_key = (ranked[0][0], ranked[0][1])
     margin = (ranked[0][2] - ranked[1][2]) if len(ranked) > 1 else 0.0
-    max_pages = max(1, int(getattr(cfg.reader, "max_pages", 3)))
+    max_pages = reader_pages
     ctx_keys = [(d, p) for d, p, _s, _w in ranked[:max_pages]]
     if primary_key not in ctx_keys:
         ctx_keys.insert(0, primary_key)
@@ -617,23 +631,28 @@ def answer_question(question: str, index_dir: str, work_dir: str,
         from vvrag.reader.client import create_reader
 
         model = model or cfg.reader.model
-        reader = create_reader(provider, model, DiskCache(cfg.cache_dir),
-                               RateLimiter(cfg.ratelimit.requests_per_minute),
-                               fallback_provider=getattr(cfg.reader, "fallback_provider", ""),
-                               fallback_model=getattr(cfg.reader, "fallback_model", ""))
+        reader = create_reader(
+            provider, model, DiskCache(cfg.cache_dir),
+            RateLimiter(cfg.ratelimit.requests_per_minute),
+            max_output_tokens=int(getattr(cfg.reader, "max_output_tokens", 512)),
+            fallback_provider=getattr(cfg.reader, "fallback_provider", ""),
+            fallback_model=getattr(cfg.reader, "fallback_model", ""))
         images = [img_path, crop_path]
     from vvrag.reader.client import run_reader_samples
     from vvrag.reader.prompts import (build_multipage_sentence_prompt,
                                       build_prompt, build_sentence_prompt)
 
+    prompt_stats: dict = {}
     if reader_mode == "mock":
         prompt = build_prompt(question, crop_text if has_text else None, max_claims=5)
     elif len(blocks) > 1:
         prompt = build_multipage_sentence_prompt(
-            question, blocks, crop_text if has_text else None, max_claims=5)
+            question, blocks, crop_text if has_text else None, max_claims=5,
+            stats_out=prompt_stats)
     else:
         prompt = build_sentence_prompt(question, sentences,
                                        crop_text if has_text else None, max_claims=5)
+    retrieval_info["prompt_pages"] = prompt_stats
     samples, api_calls = run_reader_samples(reader, images, prompt, n_samples,
                                             temperature if n_samples > 1 else 0.0)
     t_r = time.time() - t_r
